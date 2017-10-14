@@ -5,11 +5,12 @@ Created on Wed Oct 11 14:39:27 2017
 Implementation of a Q-network which plays Pong (Atari game).
 
 Description:
-This project uses a neural network as a function approximator in order to estimate the function Q(s,a) associated with the expected future reward for choosing action a while in state s. Here, s is a sequence of images representing the last 4 frames of a game of Pong, and a is one of {do nothing, up, down}. The input to the network is simply the frame data (representing s), and the output is a 3-D vector Q* representing the expected values of Q for the 3 choices of a. We use an epsilon-greedy algorithm to select the action (take random a with prob epsilon, otherwise argmax(Q)), use that to update the state s -> s', then calculate the expected Q using the Bellman equation Q(s,a) = r + \gamma*argmax(Q*(s',a')), then compute the loss via L = (1/2)*(Q*(s,a) - Q(s,a))^2 (and perform backprop appropriately). This causes the Q-network to learn to approximate Q(s,a), which can then be used to take the optimal action in a given situation.
+This project uses a neural network as a function approximator in order to estimate the function Q(s,a) associated with the expected future reward for choosing action a while in state s. Here, s is a sequence of images representing the last 4 frames of a game of Pong, and a is one of {do nothing, up, down}. The input to the network is simply the frame data (representing s), and the output is a 3-D vector Q* representing the expected values of Q for the 3 choices of a. We use an epsilon-Bayesian algorithm to select the action (take random a with prob epsilon, otherwise choose from a distribution softmax(Q)), use that to update the state s -> s', then calculate the expected Q using the Bellman equation Q(s,a) = r + \gamma*argmax(Q*(s',a')), then compute the loss via L = (1/2)*(Q*(s,a) - Q(s,a))^2 (and perform backprop appropriately). This causes the Q-network to learn to approximate Q(s,a), which can then be used to take the optimal action in a given situation.
 
 To do:
-    - Finish writing model_run() function
-    - Rewrite action selection algorithm so that (if not random) the action is chosen from a distribution of the form softmax(Q*)
+    - Why is var(Q*) (~10^-3) so low compared to <Q> (~1)? Is the learning rate simply not large enough for the weights in the output layer to learn effectively?
+    - Change graph structure so that it works with batches larger than 1
+    - Change loss so that it takes in tensor Q2 of the same size as Q1
     - Do proper vectorization of batches
     - Write a function to save training data between runs (not the weights, TF already takes care of that)
     - Write a function to automatically handle plotting the training data
@@ -192,19 +193,19 @@ def initialize_graph(in_height=160, in_width=160, color=1, nframes=4):
 #         dim_flat = tf.cast(tf.shape(pool2)[1]*tf.shape(pool2)[2]*tf.shape(pool2)[3], tf.int32, name='dim_flat')
         # Don't know why, but the output of pool2 has length 3136 rather than 6*6*64=2304. Probably due to padding...
         pool2_flat = tf.reshape(pool2, shape=[-1,3136], name='pool2_flat')
-        W3 = tf.get_variable(shape=[3136,1024], initializer=xavier_init, name='W3')
-        b3 = tf.Variable(0.01*np.ones((1024,)), dtype=tf.float32, name='b3')
+        W3 = tf.get_variable(shape=[3136,256], initializer=xavier_init, name='W3')
+        b3 = tf.Variable(0.01*np.ones((256,)), dtype=tf.float32, name='b3')
         A3 = tf.nn.relu(tf.matmul(pool2_flat,W3)+b3, name='A3')
         
         # Output layer
-        W4 = tf.get_variable(shape=[1024,3], initializer=xavier_init, name='W4')
-        b4 = tf.Variable(np.zeros((3,)), dtype=tf.float32, name='b4')
-        Q1 = tf.add(0.001*tf.matmul(A3,W4),b4, name='Q1')
+        W4 = tf.get_variable(shape=[256,3], initializer=xavier_init, name='W4')
+        b4 = tf.Variable(-np.ones((3,)), dtype=tf.float32, name='b4')
+        Q1 = tf.add(tf.matmul(A3,W4),b4, name='Q1')
         
         # Define predictions, loss, and accuracy metrics
         Q2 = tf.placeholder(tf.float32, shape=[], name='Q2')
         a = tf.placeholder(tf.int32, shape=[], name='a')
-        loss = tf.multiply(0.5,tf.reduce_mean((Q1[:,a] - Q2)**2), name='loss')
+        loss = tf.multiply(0.5,tf.reduce_mean((Q1[0,a] - Q2)**2), name='loss')
          
     # Output Graph object
     return G
@@ -249,6 +250,10 @@ def visualize_training(loss_list=[], Q_list=[], reward_list=[]):
         plt.draw()
         plt.pause(1e-10)
 
+def softmax(v):
+    exp = np.exp(v)
+    return exp/np.sum(exp, axis=1)
+
 def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_n_steps=100, n_steps_to_skip=2, save_every_n_episodes=5, recover_from_last_checkpoint=False, render=False):
     '''
     Training loop for the Q-network. Automatically initializes computational graph architecture, refreshes checkpoints if applicable, and runs the training loop over the required number of episodes. The training loop basically iterates through an episode frame by frame, at each step predicting the Q value for each action, given the previous 4 frames of the sequence. The action with the highest Q is picked (there is an epsilon chance of this decision being random), and then this action is used to step to the next frame. The Q values of the next frame are used to compute the expected Q, and then the Q-network weights are updated by backprop using a MSE loss.
@@ -256,7 +261,7 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
     # Define some constants and set up random stuff
     nframes = 4
     height, width = (160,160)
-    save_str = './checkpoints/Pong_2'
+    save_str = './checkpoints/Pong_3'
     reward_scale = 1
     plt.ion()
     # Set up Graph, Saver, Session, etc...
@@ -309,11 +314,12 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
                     # Calculate Q from forward pass
                     s['t'] = stack_frames(frame_list[-nframes:])
                     Q1 = sess.run(T['Q*'], feed_dict={T['X']:s['t']})
-                    # With probability epsilon select random action, otherwise select argmax(Q)
+                    # With probability epsilon select random action, otherwise select action from softmax distribution over Q*
                     if np.random.rand() < epsilon:
                         action = np.random.choice([1,2,3])
                     else:
-                        action = np.argmax(Q1, axis=1).squeeze() + 1
+                        softmaxQ = softmax(Q1).squeeze()
+                        action = np.random.choice([1,2,3], p=softmaxQ)
                     # Execute action in environment
                     reward_sum = 0
                     for step in range(n_steps_to_skip):
@@ -334,7 +340,8 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
                     # Sample from replay memory and do backprop
                     mean_batch_loss = 0
                     mean_batch_Q = 0
-                    current_Q = np.max(Q1)
+                    current_Q = Q1.copy()
+                    current_action = action
                     for experience in sample_from_replay_memory(replay_memory, nsamples=batch_size):
                         # Calculate Q values from updated step
                         s['t'], action, reward, s['t+1'], exp_done = experience
@@ -351,7 +358,8 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
                     # Iterate global variable
                     mean_batch_loss /= batch_size
                     mean_batch_Q /= batch_size
-                    print('Episode: {}/{}, frame: {}, batch loss: {:.3e}, mean batch Q: {:.3},\ncurrent max Q: {:.3}, predicted Q: {}'.format(ep+1, max_episodes, frame+1, mean_batch_loss, mean_batch_Q, current_Q, Q1))
+#                    print('Episode: {}/{}, frame: {}, batch loss: {:.3e}, mean batch Q: {:.3},\ncurrent max Q: {:.3}, predicted Q: {}'.format(ep+1, max_episodes, frame+1, mean_batch_loss, mean_batch_Q, current_Q, Q1))
+                    print('Episode: {}/{},\tframe: {},\tbatch loss: {:.3e},\tmean batch Q: {:.3f},\ncurrent max Q: {:.3f},\tcurrent action: {},\tcurrent var(Q): {:.3e}'.format(ep+1, max_episodes, frame+1, mean_batch_loss, mean_batch_Q, np.max(current_Q), current_action, np.var(current_Q)))
                     # Visualize loss, avg Q, blah blah blah
                     # Add random sequence to a 'validation' set that stays fixed once it reaches a max size. Then evaluation of the mean Q on this set will determine how confident the agent is it'll score.
 #                    if global_step % 50 == 1:
@@ -410,13 +418,13 @@ def model_run():
                 while done == False:
                     # Feed the sequence into the network, get Q*
                     Q = sess.run(T['Q*'], feed_dict={T['X']:sequence})
-                    print('mean Q: {}, var Q: {}'.format(np.average(Q), np.var(Q)))
+#                    print('mean Q: {}, var Q: {}'.format(np.average(Q), np.var(Q)))
                     # Select argmax(Q*) as action
                     if np.random.rand() < 0.0:
                         action = np.random.choice([1,2,3])
                     else:
                         action = np.argmax(Q.squeeze())+1
-                    print(action)
+#                    print(action)
                     # Step to the next state with the selected action, observe next state, render image
                     reward_sum = 0
                     for step in range(n_steps_to_skip):
@@ -494,7 +502,7 @@ def model_run():
 
 
 
-model_train(lr=1e-6, max_episodes=100, gamma=np.exp(-1/(10*12)), batch_size=10, epsilon0=0.90, plot_every_n_steps=25, n_steps_to_skip=2, save_every_n_episodes=1, recover_from_last_checkpoint=True, render=False)
+model_train(lr=1e-5, max_episodes=50, gamma=np.exp(-1/(10*12)), batch_size=10, epsilon0=0.90, plot_every_n_steps=25, n_steps_to_skip=2, save_every_n_episodes=1, recover_from_last_checkpoint=False, render=False)
 
 
 #model_run()

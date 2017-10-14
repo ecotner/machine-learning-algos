@@ -1,10 +1,10 @@
-Use a slightly smaller dense layer, and a higher learning rate if possible
+Using a smaller dense layer (256 nodes), and a higher learning rate if possible
 
-learning rate = 1e-6
-gamma = exp(-1/(4*12))
+learning rate = 1e-5
+gamma = exp(-1/(10*12))
 batch size = 10
-replay_memory size = 200
+replay_memory size = 600
 reward_scale = 1
-epsilon0 = 0.95, annealed linearly over 1000 episodes
+epsilon0 = 0.90, annealed linearly over 50 episodes
 n_steps_to_skip = 2
 # episodes run for = 50
