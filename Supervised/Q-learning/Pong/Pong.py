@@ -378,11 +378,72 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
 def model_run():
     ''' Runs the model after training. '''
     save_str = './checkpoints/Pong_2'
+    nframes = 4
+    n_steps_to_skip = 2
     # Initialize Graph, Session, Saver...
     G = initialize_graph()
     with G.as_default():
+        # Create dictionary of tensors in graph
+        T = {}
+        T['X'] = G.get_tensor_by_name('X:0')
+        T['Q*'] = G.get_tensor_by_name('Q1:0')
+        T['loss'] = G.get_tensor_by_name('loss:0')
+        T['Q'] = G.get_tensor_by_name('Q2:0')
         saver = tf.train.Saver(var_list=None)
-
+        with tf.Session() as sess:
+            # Recover from last checkpoint
+            print('Recovering from last checkpoint...')
+            saver.restore(sess, save_str)
+            # Enter the play loop
+            done_playing = False
+            while done_playing == False:
+                # Reset environment
+                obs = env.reset()
+                reward = 0
+                done = False
+                # Create initial frames
+                frame_list = []
+                proc_obs = process_raw_frame(obs)
+                add_to_frame_list(frame_list, [np.zeros((1,160,160,1)) for i in range(3)]+[proc_obs])
+                sequence = stack_frames(frame_list)
+                # Play through episode
+                while done == False:
+                    # Feed the sequence into the network, get Q*
+                    Q = sess.run(T['Q*'], feed_dict={T['X']:sequence})
+                    print('mean Q: {}, var Q: {}'.format(np.average(Q), np.var(Q)))
+                    # Select argmax(Q*) as action
+                    if np.random.rand() < 0.0:
+                        action = np.random.choice([1,2,3])
+                    else:
+                        action = np.argmax(Q.squeeze())+1
+                    print(action)
+                    # Step to the next state with the selected action, observe next state, render image
+                    reward_sum = 0
+                    for step in range(n_steps_to_skip):
+                        obs, reward, done_, _ = env.step(action)
+                        reward_sum += reward
+                        if done_ == True:
+                            done = True
+                    env.render()
+                    # Add state to frame_list and build next sequence
+                    proc_obs = process_raw_frame(obs)
+                    add_to_frame_list(frame_list, [proc_obs])
+                    sequence = stack_frames(frame_list[-nframes:])
+                # Ask whether to play another game
+                done_playing = False
+                valid_input = False
+                while valid_input == False:
+                    play_again = input('Play again? [y/n]: ')
+                    if play_again.lower() == 'y':
+                        done_playing = False
+                        valid_input = True
+                    elif play_again.lower() == 'n':
+                        done_playing = True
+                        valid_input = True
+                        env.render(close=True)
+                    else:
+                        valid_input = False
+                
 
 
 ''' ===================== TESTING AND DEBUGGING ======================== '''
@@ -433,7 +494,11 @@ def model_run():
 
 
 
-model_train(lr=1e-6, max_episodes=100, gamma=np.exp(-1/(4*12)), batch_size=10, epsilon0=0.90, plot_every_n_steps=25, n_steps_to_skip=2, save_every_n_episodes=1, recover_from_last_checkpoint=True, render=False)
+model_train(lr=1e-6, max_episodes=100, gamma=np.exp(-1/(10*12)), batch_size=10, epsilon0=0.90, plot_every_n_steps=25, n_steps_to_skip=2, save_every_n_episodes=1, recover_from_last_checkpoint=True, render=False)
+
+
+#model_run()
+
 
 #reward = 0
 #env.reset()
