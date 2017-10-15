@@ -1,6 +1,7 @@
 Using a smaller dense layer (256 nodes), and a higher learning rate if possible
 
 learning rate = 1e-5
+optimizer = Adam
 gamma = exp(-1/(10*12))
 batch size = 10
 replay_memory size = 600

@@ -8,9 +8,8 @@ Description:
 This project uses a neural network as a function approximator in order to estimate the function Q(s,a) associated with the expected future reward for choosing action a while in state s. Here, s is a sequence of images representing the last 4 frames of a game of Pong, and a is one of {do nothing, up, down}. The input to the network is simply the frame data (representing s), and the output is a 3-D vector Q* representing the expected values of Q for the 3 choices of a. We use an epsilon-Bayesian algorithm to select the action (take random a with prob epsilon, otherwise choose from a distribution softmax(Q)), use that to update the state s -> s', then calculate the expected Q using the Bellman equation Q(s,a) = r + \gamma*argmax(Q*(s',a')), then compute the loss via L = (1/2)*(Q*(s,a) - Q(s,a))^2 (and perform backprop appropriately). This causes the Q-network to learn to approximate Q(s,a), which can then be used to take the optimal action in a given situation.
 
 To do:
-    - Why is var(Q*) (~10^-3) so low compared to <Q> (~1)? Is the learning rate simply not large enough for the weights in the output layer to learn effectively?
-    - Change graph structure so that it works with batches larger than 1
-    - Change loss so that it takes in tensor Q2 of the same size as Q1
+    - Why is std(Q*)/max(Q*) so low (~10^-3)? This seems to be independent of the choice of learning rate. How does the agent learn to distinguish between action choices if this is so small?
+    - Why does Q rise to such large values so quickly? Especially values that are much higher than the reward scale.
     - Do proper vectorization of batches
     - Write a function to save training data between runs (not the weights, TF already takes care of that)
     - Write a function to automatically handle plotting the training data
@@ -61,6 +60,7 @@ def process_raw_frame(input_data, color=False, crop=True, ds_factor=1):
         m, n = processed_data.shape
         if ds_factor != 1:
             processed_data_temp = np.zeros((m//ds_factor,n//ds_factor))
+            # Is there some way to vectorize this? (not necessary if ds_factor=1 though)
             for i in range(m//ds_factor):
                 for j in range(n//ds_factor):
                     processed_data_temp[i,j] = np.max(processed_data[ds_factor*i:ds_factor*(i+1),ds_factor*j:ds_factor*(j+1)])
@@ -79,7 +79,7 @@ def process_raw_frame(input_data, color=False, crop=True, ds_factor=1):
                         processed_data_temp[i,j,k] = np.max(processed_data[ds_factor*i:ds_factor*(i+1),ds_factor*j:ds_factor*(j+1),k])
             processed_data = processed_data_temp
         out_shape = (1,m,n,3)
-    return processed_data.reshape(out_shape)
+    return (processed_data.reshape(out_shape)-115)/230 # Normalizes pixel values
 
 def add_to_frame_list(frame_list, frames_to_add, max_frames_to_keep=5):
     ''' Adds a set of frames to the list frame_list. Modifies the frame_list IN PLACE, so doesn't return anything. Assumes frames_to_add is a LIST.'''
@@ -110,7 +110,7 @@ def stack_frames(frame_list):
         stack[0,:,:,frame_idx] = frame_list[-(1+frame_idx)][0,:,:,0]
     return stack
 
-def add_to_replay_memory(replay_memory, experience, max_exp_to_keep=600):
+def add_to_replay_memory(replay_memory, experience, max_exp_to_keep=1000):
     ''' Adds the experience tuple (frames, action, reward, next_frames, done) to the replay_memory list. Modifies replay_memory IN PLACE, so doesn't return anything. '''
     assert type(experience) == tuple, 'frames_to_add must be a tuple'
     if len(replay_memory) + 1 <= max_exp_to_keep:
@@ -198,8 +198,9 @@ def initialize_graph(in_height=160, in_width=160, color=1, nframes=4):
         A3 = tf.nn.relu(tf.matmul(pool2_flat,W3)+b3, name='A3')
         
         # Output layer
-        W4 = tf.get_variable(shape=[256,3], initializer=xavier_init, name='W4')
-        b4 = tf.Variable(-np.ones((3,)), dtype=tf.float32, name='b4')
+#        W4 = tf.get_variable(shape=[256,3], initializer=xavier_init, name='W4')
+        W4 = tf.Variable(0.001*np.random.randn(256,3), dtype=tf.float32, name='W4')
+        b4 = tf.Variable(-1*np.zeros((3,)), dtype=tf.float32, name='b4')
         Q1 = tf.add(tf.matmul(A3,W4),b4, name='Q1')
         
         # Define predictions, loss, and accuracy metrics
@@ -214,13 +215,15 @@ def initialize_graph(in_height=160, in_width=160, color=1, nframes=4):
 
 def initialize_train_op(graph, lr):
     with graph.as_default():
-        optimizer = tf.train.AdamOptimizer(learning_rate=lr)
+#        optimizer = tf.train.AdamOptimizer(learning_rate=lr)
+#        optimizer = tf.train.RMSPropOptimizer(learning_rate=lr)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=lr)
         train_op = optimizer.minimize(graph.get_tensor_by_name('loss:0'))
     return train_op
 
 ''' ===================== TRAINING FUNCTIONS ============================= '''
 
-def visualize_training(loss_list=[], Q_list=[], reward_list=[]):
+def visualize_training(loss_list=[], Q_list=[], reward_list=[], avg_reward_list=[]):
     ''' Plots the loss and Q values over time '''
     if loss_list != []:
         plt.figure('Loss')
@@ -240,18 +243,23 @@ def visualize_training(loss_list=[], Q_list=[], reward_list=[]):
         plt.ylabel('max(Q)')
         plt.draw()
         plt.pause(1e-10)
-    if reward_list != []:
+    if (reward_list != []) or (avg_reward_list != []):
         plt.figure('Rewards')
         plt.clf()
-        plt.plot(reward_list, label='Rewards')
-        plt.title('Cumulative rewards over time')
+        if reward_list != []:
+            plt.plot(reward_list, label='Rewards')
+        if avg_reward_list != []:
+            plt.plot(avg_reward_list, label='Moving average')
+        plt.title('Rewards over time')
         plt.xlabel('Time (arb. units)')
         plt.ylabel('Rewards')
+        plt.legend()
         plt.draw()
         plt.pause(1e-10)
 
 def softmax(v):
-    exp = np.exp(v)
+    vmax = np.max(v)
+    exp = np.exp(v-vmax)
     return exp/np.sum(exp, axis=1)
 
 def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_n_steps=100, n_steps_to_skip=2, save_every_n_episodes=5, recover_from_last_checkpoint=False, render=False):
@@ -261,7 +269,7 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
     # Define some constants and set up random stuff
     nframes = 4
     height, width = (160,160)
-    save_str = './checkpoints/Pong_3'
+    save_str = './checkpoints/Pong_5'
     reward_scale = 1
     plt.ion()
     # Set up Graph, Saver, Session, etc...
@@ -295,9 +303,12 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
             global_step = 0
             epsilon = epsilon0
             cum_rewards = 0
+            avg_reward = 0
+            avg_param = np.exp(-1/20) # Sets decay time of reward moving average
             loss_list = []
             Q_list = []
             reward_list = []
+            avg_reward_list = []
             for ep in range(max_episodes):
                 # Reset Pong environment
                 obs = env.reset()
@@ -322,8 +333,11 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
                         action = np.random.choice([1,2,3], p=softmaxQ)
                     # Execute action in environment
                     reward_sum = 0
-                    for step in range(n_steps_to_skip):
-                        obs, reward, done_, _ = env.step(action)
+                    for step in range(n_steps_to_skip+1):
+                        if step == 0:
+                            obs, reward, done_, _ = env.step(action)
+                        else:
+                            obs, reward, done_, _ = env.step(1) # Do nothing in between skips, otherwise it overshoots
                         reward_sum += reward
                         if done_ == True:
                             done = True
@@ -359,7 +373,7 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
                     mean_batch_loss /= batch_size
                     mean_batch_Q /= batch_size
 #                    print('Episode: {}/{}, frame: {}, batch loss: {:.3e}, mean batch Q: {:.3},\ncurrent max Q: {:.3}, predicted Q: {}'.format(ep+1, max_episodes, frame+1, mean_batch_loss, mean_batch_Q, current_Q, Q1))
-                    print('Episode: {}/{},\tframe: {},\tbatch loss: {:.3e},\tmean batch Q: {:.3f},\ncurrent max Q: {:.3f},\tcurrent action: {},\tcurrent var(Q): {:.3e}'.format(ep+1, max_episodes, frame+1, mean_batch_loss, mean_batch_Q, np.max(current_Q), current_action, np.var(current_Q)))
+                    print('Episode: {}/{},\tframe: {},\tbatch loss: {:.3e},\tmean batch Q: {:.3e},\ncurrent max(Q*): {:.3e},\tcurrent action: {},\tcurrent std(Q*)/max(Q*): {:.3e}'.format(ep+1, max_episodes, frame+1, mean_batch_loss, mean_batch_Q, np.max(current_Q), current_action, np.std(current_Q)/np.max(current_Q)))
                     # Visualize loss, avg Q, blah blah blah
                     # Add random sequence to a 'validation' set that stays fixed once it reaches a max size. Then evaluation of the mean Q on this set will determine how confident the agent is it'll score.
 #                    if global_step % 50 == 1:
@@ -368,7 +382,10 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
                         loss_list.append(mean_batch_loss)
                         Q_list.append(mean_batch_Q)
                         reward_list.append(cum_rewards)
-                        visualize_training(loss_list, Q_list, reward_list)
+                        avg_reward = (1-avg_param)*cum_rewards + avg_param*avg_reward
+                        cum_rewards = 0
+                        avg_reward_list.append(avg_reward)
+                        visualize_training(loss_list, Q_list, reward_list, avg_reward_list)
                         # Create a dictionary of useful data generated during training. Make it a global variable so it can be accessed in case the training loop exits early.
 #                        global final_data = {'num episodes':ep, 'loss':mean_batch_loss, 'Q':mean_batch_Q, 'rewards':reward_list}
                 # Anneal epsilon linearly to zero
@@ -383,11 +400,10 @@ def model_train(lr, max_episodes, gamma, batch_size=5, epsilon0=0.1, plot_every_
 
 ''' ======================= TEST RUN AGENT ============================= '''
 
-def model_run():
+def model_run(n_steps_to_skip = 0):
     ''' Runs the model after training. '''
-    save_str = './checkpoints/Pong_2'
+    save_str = './checkpoints/Pong_5'
     nframes = 4
-    n_steps_to_skip = 2
     # Initialize Graph, Session, Saver...
     G = initialize_graph()
     with G.as_default():
@@ -427,8 +443,11 @@ def model_run():
 #                    print(action)
                     # Step to the next state with the selected action, observe next state, render image
                     reward_sum = 0
-                    for step in range(n_steps_to_skip):
-                        obs, reward, done_, _ = env.step(action)
+                    for step in range(n_steps_to_skip+1):
+                        if step == 0:
+                            obs, reward, done_, _ = env.step(action)
+                        else:
+                            obs, reward, done_, _ = env.step(1) # Do nothing in between skips, otherwise it overshoots
                         reward_sum += reward
                         if done_ == True:
                             done = True
@@ -502,10 +521,10 @@ def model_run():
 
 
 
-model_train(lr=1e-5, max_episodes=50, gamma=np.exp(-1/(10*12)), batch_size=10, epsilon0=0.90, plot_every_n_steps=25, n_steps_to_skip=2, save_every_n_episodes=1, recover_from_last_checkpoint=False, render=False)
+model_train(lr=1e-3, max_episodes=100, gamma=np.exp(-1/(10*24)), batch_size=10, epsilon0=0, plot_every_n_steps=25, n_steps_to_skip=0, save_every_n_episodes=1, recover_from_last_checkpoint=False, render=False)
 
 
-#model_run()
+#model_run(n_steps_to_skip=0)
 
 
 #reward = 0
