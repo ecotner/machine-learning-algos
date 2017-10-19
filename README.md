@@ -1,0 +1,1 @@
+Collection of machine learning scripts and projects I've been working on. Everything is split between supervised and unsupervised algos, along with some useful datasets (MNIST for now).
