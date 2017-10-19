@@ -162,7 +162,7 @@ hidden_width = 7
 #X_val = generate_data(100, n_features, n_ups)
 #train(X, hidden_width, lr=1e-3, max_epochs=10**3, batch_size=32, X_val=X_val, restore_from_checkpoint=False, plot_every_n_steps=100, save_every_n_epochs=100)
 
-model_run(100, n_features, n_ups, hidden_width)
+model_run(100, n_features, n_ups, hidden_width) 
 
 
 
