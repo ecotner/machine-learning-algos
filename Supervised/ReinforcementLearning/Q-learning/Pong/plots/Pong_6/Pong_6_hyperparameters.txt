@@ -1,0 +1,11 @@
+learning rate = 1e-1
+optimizer = GradientDescent
+gamma = exp(-1/(10*12))
+batch size = 10
+replay_memory size = 1000
+reward_scale = 1
+epsilon0 = 0, using sampling from softmax(Q*)
+n_steps_to_skip = 1
+# episodes run for = 86
+
+Seems using different optimization methods makes a huge impact on the learning! At the same learning rate, Adam and RMSProp cause the Q value to explode very quickly (Q* ~ 1e8), whereas GradientDescent seems to be much more stable. Also, the ratio std(Q*)/max(Q*) seems to be a little bit higher (1e-2 and sometimes even 1e-1 level) using GradientDescent. Admittedly, this doesn't really make a difference until the ratio is like O(1).

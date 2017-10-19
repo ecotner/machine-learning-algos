@@ -1,0 +1,2 @@
+model_checkpoint_path: "MNIST_CNN_v2-1"
+all_model_checkpoint_paths: "MNIST_CNN_v2-1"
