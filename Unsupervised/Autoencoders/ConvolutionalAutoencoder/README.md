@@ -1,0 +1,1 @@
+Simple convolutional autoencoder trained on MNIST data. The data compression is pretty moderate, but still respectable, as the number of latent features in the middle convolutional layer is 5*5*16=400, compared with the original 28*28=784 in the MNIST images (a 49% reduction).
