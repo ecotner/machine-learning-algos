@@ -169,14 +169,48 @@ def visualize_conv_filters():
             saver.restore(sess, save_str)
             # Get the weights of the first convolutional filter layer
             F = sess.run(W1)
-            # Plot them all side by side (64 = 8*8)
+            # Plot them all side by side (16 = 4*4)
             plt.figure('Filters')
             for i in range(4):
                 for j in range(4):
                     f = F[:,:,:,i+4*j]
-                    plt.subplot(8, 4, 1+i+8*j)
+                    plt.subplot(4, 4, 1+i+4*j)
                     plt.imshow(f)
             plt.draw()
+
+def visualize_decoded_image(X):
+    save_str = './checkpoints/CAE_1'
+    # Build computational graph
+    G = initialize_graph()
+    cae = {'X':G.get_tensor_by_name('X:0'),
+           'Y':G.get_tensor_by_name('Y:0'),
+           'loss':G.get_tensor_by_name('loss:0')}
+    with G.as_default():
+        # Create Saver
+        saver = tf.train.Saver()
+        # Start TF Session
+        with tf.Session() as sess:
+            # Restore parameters
+            saver.restore(sess, save_str)
+            # Iterate over input data
+            for m in range(X.shape[0]):
+                # Evaluate autoencoder output
+                y, loss = sess.run([cae['Y'], cae['loss']], feed_dict={cae['X']:X[m,:,:,:].reshape(1,28,28,1)})
+                # Plot input/output side by side
+                plt.figure('Autoencoder comparison')
+                plt.clf()
+                plt.suptitle('Autoencoder comparison - loss: {}'.format(loss))
+                plt.subplot(121)
+                plt.imshow(X[m,:,:,0])
+                plt.title('Original')
+                plt.subplot(122)
+                plt.imshow(y.reshape(28,28))
+                plt.title('Reconstructed')
+                plt.draw()
+                plt.pause(1e-10)
+                q = input('Type q to quit or any other button to continue: ')
+                if q.lower() == 'q':
+                    break
 
 #X = load_dataset()
 #X_train = X[250:,:,:,:]
@@ -184,7 +218,9 @@ def visualize_conv_filters():
 
 #train_model(X_train, lr=1e-2, max_epochs=50, batch_size=1000, X_val=X_val, reload_parameters=False, save_path='./checkpoints/CAE_1', plot_every_n_steps=1, save_every_n_epochs=2)
 
-visualize_conv_filters()
+#visualize_conv_filters()
+
+visualize_decoded_image(X_val)
 
 
 
