@@ -24,28 +24,29 @@ def initialize_graph():
         X = tf.placeholder(tf.float32, shape=[None,28,28,1], name='X')
         
         # Convolutional layers
-        c_in, c_out = (1,16)
-        W1 = tf.Variable(np.random.randn(5,5,c_in,c_out)*np.sqrt(2/(5*5*c_in+c_out)), dtype=tf.float32, name='W1')
+        c_in, c_out, F = (1,16,5)
+        W1 = tf.Variable(np.random.randn(F,F,c_in,c_out)*np.sqrt(2/(F*F*c_in+c_out)), dtype=tf.float32, name='W1')
         b1 = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b1')
         conv1 = tf.nn.relu(tf.nn.conv2d(X, W1, strides=[1,1,1,1], padding='VALID') + b1, name='conv1')
         pool1 = tf.nn.max_pool(conv1, ksize=[1,2,2,1], strides=[1,2,2,1], padding='VALID')
         # Output from pool1 should be [None,12,12,c_out]
         
-        c_in, c_out = (c_out,16)
-        W2 = tf.Variable(np.random.randn(4,4,c_in,c_out)*np.sqrt(2/(4*4*c_in+c_out)), dtype=tf.float32, name='W2')
+        c_in, c_out, F = (c_out,8,4)
+        W2 = tf.Variable(np.random.randn(F,F,c_in,c_out)*np.sqrt(2/(F*F*c_in+c_out)), dtype=tf.float32, name='W2')
         b2 = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b2')
         conv2 = tf.nn.relu(tf.nn.conv2d(pool1, W2, strides=[1,2,2,1], padding='VALID') + b2, name='conv2')
         # Output from conv2 should be [None,5,5,c_out]
+        # conv2 is also the layer holding the latent representations
         
         # Deconvolutional layers
-        c_in, c_out = (c_out,16)
-        W3 = tf.Variable(np.random.randn(4,4,c_out,c_in)*np.sqrt(2/(4*4*c_in+c_out)), dtype=tf.float32, name='W3')
+        c_in, c_out, F = (c_out,16,4)
+        W3 = tf.Variable(np.random.randn(F,F,c_out,c_in)*np.sqrt(2/(F*F*c_in+c_out)), dtype=tf.float32, name='W3')
         b3 = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b3')
         deconv3 = tf.nn.relu(tf.nn.conv2d_transpose(conv2, W3, output_shape=[tf.shape(X)[0],12,12,c_out], strides=[1,2,2,1], padding='VALID') + b3, name='deconv3')
         # Output from deconv3 should be [None,12,12,c_out]
         
-        c_in, c_out = (c_out, 1)
-        W4 = tf.Variable(np.random.randn(6,6,c_out,c_in)*np.sqrt(2/(6*6*c_in+c_out)), dtype=tf.float32, name='W4')
+        c_in, c_out, F = (c_out, 1, 6)
+        W4 = tf.Variable(np.random.randn(F,F,c_out,c_in)*np.sqrt(2/(F*F*c_in+c_out)), dtype=tf.float32, name='W4')
         b4 = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b4')
         Y = tf.nn.conv2d_transpose(deconv3, W4, output_shape=[tf.shape(X)[0],28,28,c_out], strides=[1,2,2,1], padding='VALID', name='Y')
         
@@ -158,7 +159,7 @@ def load_dataset():
 ''' ===================== TESTING/DEBUGGING ============================== '''
 
 def visualize_conv_filters():
-    save_str = './checkpoints/CAE_1'
+    save_str = './checkpoints/CAE_2'
     # Build the computational graph
     G = initialize_graph()
     with G.as_default():
@@ -173,13 +174,13 @@ def visualize_conv_filters():
             plt.figure('Filters')
             for i in range(4):
                 for j in range(4):
-                    f = F[:,:,:,i+4*j]
+                    f = F[:,:,:,i+4*j].squeeze()
                     plt.subplot(4, 4, 1+i+4*j)
                     plt.imshow(f)
             plt.draw()
 
 def visualize_decoded_image(X):
-    save_str = './checkpoints/CAE_1'
+    save_str = './checkpoints/CAE_2'
     # Build computational graph
     G = initialize_graph()
     cae = {'X':G.get_tensor_by_name('X:0'),
@@ -216,7 +217,7 @@ def visualize_decoded_image(X):
 #X_train = X[250:,:,:,:]
 #X_val = X[:250,:,:,:]
 
-#train_model(X_train, lr=1e-2, max_epochs=50, batch_size=1000, X_val=X_val, reload_parameters=False, save_path='./checkpoints/CAE_1', plot_every_n_steps=1, save_every_n_epochs=2)
+#train_model(X_train, lr=1e-2, max_epochs=50, batch_size=1000, X_val=X_val, reload_parameters=False, save_path='./checkpoints/CAE_2', plot_every_n_steps=1, save_every_n_epochs=2)
 
 #visualize_conv_filters()
 
