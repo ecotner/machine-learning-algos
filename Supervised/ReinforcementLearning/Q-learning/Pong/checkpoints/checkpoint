@@ -1,2 +1,2 @@
-model_checkpoint_path: "Pong_7"
-all_model_checkpoint_paths: "Pong_7"
+model_checkpoint_path: "."
+all_model_checkpoint_paths: "."
