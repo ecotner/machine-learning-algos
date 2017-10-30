@@ -37,13 +37,14 @@ import matplotlib.pyplot as plt
 import time
 
 ''' ===================== SET UP PONG ENVIRONMENT ======================= '''
+'''
 env = gym.make('Pong-v0')
 action_space = env.action_space
 # 0,1 = do nothing, 2,4 = up, 3,5 = down (just use 1,2,3)
 # These commands actually impart a momentum to the paddle in the specified direction! So you can do 2,2,0,0,0 and actually coast a significant part of the way to the top of the stage!
 observation_space = env.observation_space
 # Box of shape (210,16,3) = (height,width,color channels)
-
+'''
 ''' ===================== DATA PROCESSING AND HANDLING ===================== '''
 
 #raw_input_shape = observation_space.shape
@@ -554,7 +555,7 @@ def visualize_conv_filters():
 #model_train(lr=3e-3, max_episodes=100, gamma=np.exp(-1/(5*12)), batch_size=10, epsilon0=0, plot_every_n_steps=25, n_steps_to_skip=1, save_every_n_episodes=1, recover_from_last_checkpoint=True, render=False)
 
 
-model_run(n_steps_to_skip=1, epsilon=0.1)
+#model_run(n_steps_to_skip=1, epsilon=0.1)
 
 #visualize_conv_filters()
 
