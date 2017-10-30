@@ -128,7 +128,11 @@ class ConvolutionalAutoencoder(object):
         with self.graph.as_default():
             # Define the optimizer and training operation
             optimizer = tf.train.AdamOptimizer(lr)
-            train_op = optimizer.minimize(self.Loss)
+            gradients, variables = zip(*optimizer.compute_gradients(self.Loss))
+            clip_norm = tf.placeholder(dtype=tf.float32, shape=[])
+            gradients, global_norm = tf.clip_by_global_norm(gradients, clip_norm)
+            train_op = optimizer.apply_gradients(zip(gradients, variables))
+#            train_op = optimizer.minimize(self.Loss)
             # Define Saver
             saver = tf.train.Saver()
             # Make minibatches
@@ -148,18 +152,21 @@ class ConvolutionalAutoencoder(object):
                 plt.ion()
                 # Iterate over epochs
                 global_step = 0
+                avg_grad = 1e4
+                grad_decay_rate = np.exp(-1/len(minibatches))
                 nan_flag = False
                 for ep in range(max_epochs):
                     # Iterate over minibatches
                     for b, batch in enumerate(minibatches):
                         # Get loss, perform training op
-                        _, loss = sess.run([train_op, self.Loss], feed_dict={self.X:batch, self.Lambda:reg_lambda})
+                        _, current_grad, loss = sess.run([train_op, global_norm, self.Loss], feed_dict={self.X:batch, self.Lambda:reg_lambda, clip_norm:avg_grad})
                         print('Episode {}/{}, batch {}/{}, loss: {}'.format(ep+1, max_epochs, b, n_batches, loss))
                         # Exit if nan
                         if loss == np.nan:
                             print('nan error, exiting training')
                             nan_flag = True
                             break
+                        avg_grad = (1-grad_decay_rate)*current_grad + grad_decay_rate*avg_grad
                         # Plot progress
                         if global_step % plot_every_n_steps == 0:
                             loss_list.append(loss)
@@ -524,7 +531,7 @@ cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,16)
 # Second layer: (6,6,32,16) filter, (1,2,2,1) stride, (78,78,16) output
 # Third layer: (6,6,16,4) filter, (1,2,2,1) stride, (160,160,4) output
 
-cae.train(X_train, lr=1e-3, max_epochs=200, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints/Pong_AE_pretrain_3', plot_every_n_steps=25, save_every_n_epochs=2)
+cae.train(X_train, lr=1e-3, max_epochs=200, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=True, save_path='./checkpoints/Pong_AE_pretrain_3', plot_every_n_steps=25, save_every_n_epochs=2)
 
 #cae.visualize_decoded_image(X_val, save_str='./checkpoints/Pong_AE_pretrain_2')
 #cae.visualize_conv_filters(save_str='./checkpoints/Pong_AE_pretrain_2')
