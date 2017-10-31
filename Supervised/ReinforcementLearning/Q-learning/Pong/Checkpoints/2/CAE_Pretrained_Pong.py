@@ -60,7 +60,7 @@ class ConvolutionalAutoencoder(object):
                 return tf.nn.tanh(x, name=name)
         elif activation == 'lrelu':
             def a(x, name=None):
-                return tf.maximum(0.1*x, x, name=name)
+                return tf.maximum(x/5.5, x, name=name)
         
         # Create graph
         G = tf.Graph()
@@ -128,7 +128,7 @@ class ConvolutionalAutoencoder(object):
         return G
     
     # Training function
-    def train(self, X_train, lr, max_epochs, batch_size, reg_lambda=0, X_val=None, reload_parameters=False, save_path=None, plot_every_n_steps=25, save_every_n_epochs=10000):
+    def train(self, X_train, lr0, max_epochs, batch_size, reg_lambda=0, X_val=None, reload_parameters=False, save_path=None, plot_every_n_steps=25, save_every_n_epochs=10000):
         '''
         Trains the autoencoder on input images X_train, and plots the loss as it goes along.
         '''
@@ -136,13 +136,17 @@ class ConvolutionalAutoencoder(object):
             np.random.seed(seed)
             tf.set_random_seed(seed)
             plt.ion()
-            # Define the optimizer and training operation
-            optimizer = tf.train.AdamOptimizer(lr)
+            # Define the optimizer, learning rate decay, gradient clipping, and training operation
+            def lr_decay(epoch):
+                return lr0/(1+(1+epoch)/(max_epochs/30))
+            decay_step = 5
+            lr = lr_decay(-1)
+            lr_t = tf.placeholder(dtype=tf.float32, shape=[])
+            optimizer = tf.train.AdamOptimizer(lr_t)
             gradients, variables = zip(*optimizer.compute_gradients(self.Loss))
             clip_norm = tf.placeholder(dtype=tf.float32, shape=[])
             gradients, global_norm = tf.clip_by_global_norm(gradients, clip_norm)
             train_op = optimizer.apply_gradients(zip(gradients, variables))
-#            train_op = optimizer.minimize(self.Loss)
             # Define Saver
             saver = tf.train.Saver()
             # Make minibatches
@@ -172,7 +176,7 @@ class ConvolutionalAutoencoder(object):
                     # Iterate over minibatches
                     for b, batch in enumerate(minibatches):
                         # Get loss, perform training op
-                        _, current_grad, loss = sess.run([train_op, global_norm, self.Loss], feed_dict={self.X:batch, self.Lambda:reg_lambda, clip_norm:5*avg_grad})
+                        _, current_grad, loss = sess.run([train_op, global_norm, self.Loss], feed_dict={self.X:batch, lr_t:lr, self.Lambda:reg_lambda, clip_norm:5*avg_grad})
                         print('Episode {}/{}, batch {}/{}, loss: {}'.format(ep+1, max_epochs, b, n_batches, loss))
                         # Exit if nan
                         if loss == np.nan:
@@ -193,6 +197,7 @@ class ConvolutionalAutoencoder(object):
                                 plt.semilogy(step_list, val_loss_list, label='Validation')
                                 plt.legend()
                                 if val_loss < min_val_loss:
+                                    steps_since_min_val_loss = 0
                                     print('Saving optimal solution...')
                                     saver.save(sess, save_path)
                                 elif steps_since_min_val_loss < max_early_stopping_epochs*len(minibatches)/plot_every_n_steps:
@@ -207,6 +212,9 @@ class ConvolutionalAutoencoder(object):
                             plt.draw()
                             plt.pause(1e-10)
                         global_step += 1
+                    # Modify learning rate
+                    if 1+ep % decay_step == 0:
+                        lr = lr_decay(ep)
                     # Save parameters
                     if (nan_flag == True) or (early_stop_flag == True):
                         break
@@ -334,7 +342,7 @@ class QNetwork(object):
             
             # Build output layer (last dense layer)
             layer_idx += 1
-            c_out = decoder_spec[-1]
+            c_out = dense_spec[-1]
             c_in = tf.shape(A)[-1]
             W = tf.Variable(tf.random_normal((c_in, c_out))*np.sqrt(2/(c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
             b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
@@ -358,7 +366,7 @@ class QNetwork(object):
             a = tf.placeholder(dtype=tf.int32, shape=[None], name='a')
             Q_mask = tf.one_hot(a, depth=3, dtype=tf.int32, axis=-1)
             
-            Loss = tf.add(tf.reduce_mean((tf.reduce_sum(Q_mask*Y, axis=1)-Q)**2), reg_loss, name='Loss')
+            Loss = tf.reduce_mean((tf.reduce_sum(Q_mask*Y, axis=1)-Q)**2, name='Loss')
         
         # Return the computational graph
         return G
@@ -561,7 +569,7 @@ cae.visualize_decoded_image(X_val)
 # Reload screen data and format for training
 #X_train, X_val = shuffle_pong_dataset(load_pong_dataset(), val_frac=0.03)
 # Build autoencoder and train on Pong screens
-cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,16), (1,1,1,1)), ((5,5,16,32), (1,1,1,1)), ((3,3,32,64), (1,1,1,1))], decoder_spec=[((3,3,64,32), (1,1,1,1), (37,37,32)), ((6,6,32,16), (1,2,2,1), (78,78,16)), ((6,6,16,4), (1,2,2,1), (160,160,4))], activation='lrelu', regularization='L2')
+cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,4), (1,1,1,1)), ((5,5,4,16), (1,1,1,1)), ((3,3,16,32), (1,1,1,1))], decoder_spec=[((3,3,32,16), (1,1,1,1), (37,37,16)), ((6,6,16,4), (1,2,2,1), (78,78,4)), ((6,6,4,4), (1,2,2,1), (160,160,4))], activation='tanh', regularization='L2')
 # Encoder layers:
 # First layer: (5,5,4,16) filter, (1,1,1,1) stride, 2x2 max pool, (78,78,16) output
 # Second layer: (5,5,16,32) filter, (1,1,1,1) stride, 2x2 max pool, (37,37,32) output
@@ -571,7 +579,7 @@ cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,16)
 # Second layer: (6,6,32,16) filter, (1,2,2,1) stride, (78,78,16) output
 # Third layer: (6,6,16,4) filter, (1,2,2,1) stride, (160,160,4) output
 
-cae.train(X_train, lr=1e-3, max_epochs=200, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=2)
+cae.train(X_train, lr0=1e-3, max_epochs=200, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000)
 
 #cae.visualize_decoded_image(X_val, save_str='./checkpoints')
 #cae.visualize_conv_filters(save_str='./checkpoints')
