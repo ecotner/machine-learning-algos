@@ -42,7 +42,9 @@ class ConvolutionalAutoencoder(object):
     Notes: The output length L_out of a convolutional layer is L_out = (L_in-F)/S+1, where F and S are the filter/stride length in that direction. The output length of a transpose convolution (deconvolution) layer is L_out = F + S*(L_in-1). Make sure your output matches your expectation.
     '''
     def __init__(self, input_spec, encoder_spec, decoder_spec, activation='relu', regularization=None):
+        print('Constructing computational graph...')
         self.graph = self.define_graph(input_spec, encoder_spec, decoder_spec, activation, regularization)
+        print('Graph done!')
         self.X = self.graph.get_tensor_by_name('X:0')
         self.Y = self.graph.get_tensor_by_name('Y:0')
         self.Z = self.graph.get_tensor_by_name('Z:0')
@@ -128,7 +130,7 @@ class ConvolutionalAutoencoder(object):
         return G
     
     # Training function
-    def train(self, X_train, lr0, max_epochs, batch_size, reg_lambda=0, X_val=None, reload_parameters=False, save_path=None, plot_every_n_steps=25, save_every_n_epochs=10000):
+    def train(self, X_train, lr0, max_epochs, batch_size, reg_lambda=0, X_val=None, reload_parameters=False, save_path=None, plot_every_n_steps=25, save_every_n_epochs=10000, max_early_stopping_epochs=10):
         '''
         Trains the autoencoder on input images X_train, and plots the loss as it goes along.
         '''
@@ -150,7 +152,9 @@ class ConvolutionalAutoencoder(object):
             # Define Saver
             saver = tf.train.Saver()
             # Make minibatches
+            print('Making minibatches...')
             minibatches = make_minibatches(X_train, batch_size=batch_size, batch_axis=0)
+            print('Minibatches done!')
             n_batches = len(minibatches)
             # Create TF Session
             with tf.Session() as sess:
@@ -169,7 +173,6 @@ class ConvolutionalAutoencoder(object):
                 nan_flag = False    # Keep track of nan values appearing in computation and exit if they occur
                 min_val_loss = 1e10     # Keep track of validation loss for early stopping
                 steps_since_min_val_loss = 0
-                max_early_stopping_epochs = 2
                 early_stop_flag = False
                 # Iterate over epochs
                 for ep in range(max_epochs):
@@ -197,6 +200,7 @@ class ConvolutionalAutoencoder(object):
                                 plt.semilogy(step_list, val_loss_list, label='Validation')
                                 plt.legend()
                                 if val_loss < min_val_loss:
+                                    min_val_loss = val_loss
                                     steps_since_min_val_loss = 0
                                     print('Saving optimal solution...')
                                     saver.save(sess, save_path)
@@ -222,9 +226,12 @@ class ConvolutionalAutoencoder(object):
                         print('Saving...')
                         saver.save(sess, save_path)
                 # Save at end
-                print('Saving...')
-                saver.save(sess, save_path)
-                print('Training complete!')
+                if (nan_flag == True) or (early_stop_flag == True):
+                    pass
+                else:
+                    print('Saving...')
+                    saver.save(sess, save_path)
+                    print('Training complete!')
     
     def visualize_decoded_image(self, X, save_str='./checkpoints/'):
         ''' Compares the autoencoded image with the original side-by-side. '''
@@ -255,10 +262,10 @@ class ConvolutionalAutoencoder(object):
                     if q.lower() == 'q':
                         break
     
-    def visualize_conv_filters(self, save_str):
+    def visualize_conv_filters(self, layer, save_str):
         with self.graph.as_default():
             # Import the weights
-            W1 = self.graph.get_tensor_by_name('W1:0')
+            W1 = self.graph.get_tensor_by_name('W'+str(layer)+':0')
             saver = tf.train.Saver(var_list=[W1])
             with tf.Session() as sess:
                 saver.restore(sess, save_str)
@@ -485,7 +492,9 @@ def collect_pong_screens(max_episodes, steps_to_skip=1, max_to_keep=10**4):
 #            global_step += 1
             print('Number of frames collected: {}'.format(len(frame_list)))
     # Save frames to disk
-    np.save('./Pong_frames.npy', np.stack(frame_list, axis=-1))
+    print('Saving frames to disk...')
+    np.save('../../Pong_frames.npy', np.stack(frame_list, axis=-1))
+    print('Frames saved!')
 
 # Load MNIST dataset
 def load_MNIST_dataset():
@@ -500,7 +509,9 @@ def load_MNIST_dataset():
 
 # Load the collected Pong screens
 def load_pong_dataset():
+    print('Loading pong frames...')
     X_raw = np.load('../../Pong_frames.npy')
+    print('Frames loaded!')
     return X_raw
 
 def shuffle_MNIST_dataset(X, val_frac=0.01):
@@ -565,11 +576,11 @@ cae.visualize_decoded_image(X_val)
 
 # Pre-train autoencoder on Pong screens
 # Collect pong screen data
-#collect_pong_screens(max_episodes=3, steps_to_skip=1, max_to_keep=10**4)
+#collect_pong_screens(max_episodes=5, steps_to_skip=1, max_to_keep=10**10)
 # Reload screen data and format for training
-#X_train, X_val = shuffle_pong_dataset(load_pong_dataset(), val_frac=0.03)
+#X_train, X_val = shuffle_pong_dataset(load_pong_dataset(), val_frac=0.02)
 # Build autoencoder and train on Pong screens
-cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,4), (1,1,1,1)), ((5,5,4,16), (1,1,1,1)), ((3,3,16,32), (1,1,1,1))], decoder_spec=[((3,3,32,16), (1,1,1,1), (37,37,16)), ((6,6,16,4), (1,2,2,1), (78,78,4)), ((6,6,4,4), (1,2,2,1), (160,160,4))], activation='tanh', regularization='L2')
+cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,4), (1,1,1,1)), ((5,5,4,16), (1,1,1,1)), ((3,3,16,32), (1,1,1,1))], decoder_spec=[((3,3,32,16), (1,1,1,1), (37,37,16)), ((6,6,16,4), (1,2,2,1), (78,78,4)), ((6,6,4,4), (1,2,2,1), (160,160,4))], activation='lrelu', regularization='L2')
 # Encoder layers:
 # First layer: (5,5,4,16) filter, (1,1,1,1) stride, 2x2 max pool, (78,78,16) output
 # Second layer: (5,5,16,32) filter, (1,1,1,1) stride, 2x2 max pool, (37,37,32) output
@@ -579,10 +590,10 @@ cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,4),
 # Second layer: (6,6,32,16) filter, (1,2,2,1) stride, (78,78,16) output
 # Third layer: (6,6,16,4) filter, (1,2,2,1) stride, (160,160,4) output
 
-cae.train(X_train, lr0=1e-3, max_epochs=200, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000)
+cae.train(X_train, lr0=1e-3, max_epochs=100, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000, max_early_stopping_epochs=10)
 
 #cae.visualize_decoded_image(X_val, save_str='./checkpoints')
-#cae.visualize_conv_filters(save_str='./checkpoints')
+#cae.visualize_conv_filters(layer=3, save_str='./checkpoints')
 
 # Attach Q-network to the end of the autoencoder
 #???
