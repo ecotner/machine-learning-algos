@@ -272,9 +272,9 @@ class QNetwork(object):
     '''
     A class which encapsulates a pong-playing Q-network. The network consists of a CNN which takes (preprocessed) images of the playing screen as input, and outputs a vector of values which give the expected discounted reward of the next state for each possible action. In this sense, the network acts as a function approximator for the value function Q(s,a).
     '''
-    def __init__(self, input_spec, encoder_spec, decoder_spec, activation='relu', regularization=None):
+    def __init__(self, input_spec, conv_spec, dense_spec, activation='relu', regularization=None):
         ''' Initializes Q-network. '''
-        self.graph = self.define_graph(input_spec, encoder_spec, decoder_spec, activation, regularization)
+        self.graph = self.define_graph(input_spec, conv_spec, dense_spec, activation, regularization)
         self.X = self.graph.get_tensor_by_name('X:0')
         self.Y = self.graph.get_tensor_by_name('Y:0')
         self.Z = self.graph.get_tensor_by_name('Z:0')
