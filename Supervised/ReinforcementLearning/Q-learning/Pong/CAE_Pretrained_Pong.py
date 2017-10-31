@@ -159,7 +159,7 @@ class ConvolutionalAutoencoder(object):
                     # Iterate over minibatches
                     for b, batch in enumerate(minibatches):
                         # Get loss, perform training op
-                        _, current_grad, loss = sess.run([train_op, global_norm, self.Loss], feed_dict={self.X:batch, self.Lambda:reg_lambda, clip_norm:avg_grad})
+                        _, current_grad, loss = sess.run([train_op, global_norm, self.Loss], feed_dict={self.X:batch, self.Lambda:reg_lambda, clip_norm:10*avg_grad})
                         print('Episode {}/{}, batch {}/{}, loss: {}'.format(ep+1, max_epochs, b, n_batches, loss))
                         # Exit if nan
                         if loss == np.nan:
@@ -188,7 +188,7 @@ class ConvolutionalAutoencoder(object):
                     # Save parameters
                     if nan_flag == True:
                         break
-                    elif ep % save_every_n_epochs == 0:
+                    elif (ep % save_every_n_epochs == 0) and (ep != 0):
                         print('Saving...')
                         saver.save(sess, save_path)
                 # Save at end
@@ -531,10 +531,10 @@ cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,16)
 # Second layer: (6,6,32,16) filter, (1,2,2,1) stride, (78,78,16) output
 # Third layer: (6,6,16,4) filter, (1,2,2,1) stride, (160,160,4) output
 
-cae.train(X_train, lr=1e-3, max_epochs=200, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=True, save_path='./checkpoints/Pong_AE_pretrain_3', plot_every_n_steps=25, save_every_n_epochs=2)
+#cae.train(X_train, lr=1e-3, max_epochs=200, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=True, save_path='./checkpoints/Pong_AE_pretrain_3', plot_every_n_steps=25, save_every_n_epochs=2)
 
-#cae.visualize_decoded_image(X_val, save_str='./checkpoints/Pong_AE_pretrain_2')
-#cae.visualize_conv_filters(save_str='./checkpoints/Pong_AE_pretrain_2')
+cae.visualize_decoded_image(X_val, save_str='./checkpoints/Pong_AE_pretrain_3')
+cae.visualize_conv_filters(save_str='./checkpoints/Pong_AE_pretrain_3')
 
 # Attach Q-network to the end of the autoencoder
 #???
