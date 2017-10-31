@@ -1,0 +1,2 @@
+model_checkpoint_path: "Pong_AE_pretrain_3"
+all_model_checkpoint_paths: "Pong_AE_pretrain_3"

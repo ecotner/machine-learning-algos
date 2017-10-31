@@ -1,0 +1,11 @@
+learning rate = 1e-7
+optimizer = Adam
+gamma = exp(-1/(10*24))
+batch size = 10
+replay_memory size = 1000
+reward_scale = 1
+epsilon0 = 0.90, annealed linearly over 100 episodes
+n_steps_to_skip = 0
+# episodes run for = 80
+
+Plot windows inexplicably closed, so I don't know what the history of this training session looked like, but it seems to perform alright when running the model. Out of the 4 games I watched, the agent managed to score 3 points!
