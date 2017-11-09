@@ -226,12 +226,12 @@ class ConvolutionalAutoencoder(object):
                         print('Saving...')
                         saver.save(sess, save_path)
                 # Save at end
-                if (nan_flag == True) or (early_stop_flag == True):
-                    pass
-                else:
-                    print('Saving...')
-                    saver.save(sess, save_path)
-                    print('Training complete!')
+#                if (nan_flag == True) or (early_stop_flag == True):
+#                    pass
+#                else:
+#                    print('Saving...')
+#                    saver.save(sess, save_path)
+#                    print('Training complete!')
     
     def visualize_decoded_image(self, X, save_str='./checkpoints/'):
         ''' Compares the autoencoded image with the original side-by-side. '''
@@ -275,6 +275,7 @@ class ConvolutionalAutoencoder(object):
                 height, width, c_in, c_out = F.shape
                 # Plot them all side by side (16 = 4*4)
                 plt.figure('Filters')
+                plt.clf()
                 for i in range(c_in):
                     for j in range(c_out):
                         f = F[:,:,i,j]
@@ -590,10 +591,10 @@ cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,4,4),
 # Second layer: (6,6,32,16) filter, (1,2,2,1) stride, (78,78,16) output
 # Third layer: (6,6,16,4) filter, (1,2,2,1) stride, (160,160,4) output
 
-cae.train(X_train, lr0=1e-3, max_epochs=100, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000, max_early_stopping_epochs=10)
+#cae.train(X_train, lr0=1e-3, max_epochs=100, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000, max_early_stopping_epochs=10)
 
 #cae.visualize_decoded_image(X_val, save_str='./checkpoints')
-#cae.visualize_conv_filters(layer=3, save_str='./checkpoints')
+cae.visualize_conv_filters(layer=2, save_str='./checkpoints')
 
 # Attach Q-network to the end of the autoencoder
 #???

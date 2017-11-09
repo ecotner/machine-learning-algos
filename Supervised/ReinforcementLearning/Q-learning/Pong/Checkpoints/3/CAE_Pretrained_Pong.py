@@ -4,7 +4,7 @@ Created on Fri Oct 20 14:02:34 2017
 
 Q-learning algorithm to play Pong. Using convolutional autoencoder (CAE) to pretrain the convolutional layers of the network in order to force the filters to learn good representations of the game space. Then, once the convolutional layers have been trained, we then append the rest of of Q-network onto the end of the latent representation layer of the CAE and then do fine-tuning on the higher layers to approximate Q(s,a).
 
-The autoencoder is a several-layer convolutional network that has an encoder and decoder part. The encoder takes pong screens of dimension (160,160,4) in, where the last dimension is the previous 4 iterations of the game. 
+The autoencoder is a several-layer convolutional network that has an encoder and decoder part. The encoder takes pong screens of dimension (160,160,4) in, where the last dimension is the previous 4 iterations of the game. It then adds two channels which are just the (x,y) coordinates of the pixels at each point (normalized to [-1,1]); hopefully this allows the features to propagate the global positions of features to later layers. Each layer of the encoder then downsamples the activation map using max pools and valid padding until it reaches the latent feature layer. The decoder layers are transpose convolutions that upsample the features until the output is the same size as the input. The loss is then calculated by taking the squared difference of the pixel intensities of the input and output.
 
 To do:
     1) Figure out optimal CNN layers for autoencoding
@@ -88,37 +88,37 @@ class ConvolutionalAutoencoder(object):
             layer_idx = 0
             for layer in encoder_spec[:-1]:
                 layer_idx += 1
-                filter_dims, stride = layer
+                filter_dims, stride, pad_spec = layer
                 h, w, c_in, c_out = filter_dims
                 W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
                 b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-                A = tf.nn.max_pool(a(tf.nn.conv2d(A, W, strides=stride, padding='VALID') + b), ksize=[1,2,2,1], strides=[1,2,2,1], padding='VALID', name='A'+str(layer_idx))
+                A = tf.nn.max_pool(a(tf.nn.conv2d(A, W, strides=stride, padding=pad_spec) + b), ksize=[1,2,2,1], strides=[1,2,2,1], padding='VALID', name='A'+str(layer_idx))
                 
             # Build latent feature layer (last step of the encoder)
             layer_idx += 1
-            filter_dims, stride = encoder_spec[-1]
+            filter_dims, stride, pad_spec = encoder_spec[-1]
             h, w, c_in, c_out = filter_dims
             W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
             b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-            Z = tf.add(tf.nn.conv2d(A, W, strides=stride, padding='VALID'), b, name='Z')
+            Z = tf.add(tf.nn.conv2d(A, W, strides=stride, padding=pad_spec), b, name='Z')
             A = a(Z, name='A'+str(layer_idx))
             
             # Build decoder layers
             for layer in decoder_spec[:-1]:
                 layer_idx += 1
-                filter_dims, stride, output_dims = layer
+                filter_dims, stride, pad_spec, output_dims = layer
                 h, w, c_in, c_out = filter_dims
                 W = tf.Variable(np.random.randn(h, w, c_out, c_in)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
                 b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-                A = a(tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding='VALID') + b, name='A'+str(layer_idx))
+                A = a(tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding=pad_spec) + b, name='A'+str(layer_idx))
             
             # Build output layer (last layer of decoder)
             layer_idx += 1
-            filter_dims, stride, output_dims = decoder_spec[-1]
+            filter_dims, stride, pad_spec, output_dims = decoder_spec[-1]
             h, w, c_in, c_out = filter_dims
             W = tf.Variable(np.random.randn(h, w, c_out, c_in)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
             b = tf.Variable(np.zeros((output_dims[2],)), dtype=tf.float32, name='b'+str(layer_idx))
-            Y = tf.add(tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding='VALID'), b, name='Y')
+            Y = tf.add(tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding=pad_spec), b, name='Y')
             
             # Calculate regularization (if applicable)
             reg_loss = tf.constant(0, dtype=tf.float32)
@@ -208,7 +208,7 @@ class ConvolutionalAutoencoder(object):
                                 val_loss_list.append(val_loss)
                                 plt.semilogy(step_list, val_loss_list, label='Validation')
                                 plt.legend()
-                                if val_loss < min_val_loss:
+                                if (val_loss < min_val_loss) and (global_step != 0):
                                     min_val_loss = val_loss
                                     steps_since_min_val_loss = 0
                                     print('Saving optimal solution...')
@@ -235,12 +235,12 @@ class ConvolutionalAutoencoder(object):
                         print('Saving...')
                         saver.save(sess, save_path)
                 # Save at end
-                if (nan_flag == True) or (early_stop_flag == True):
-                    pass
-                else:
-                    print('Saving...')
-                    saver.save(sess, save_path)
-                    print('Training complete!')
+#                if (nan_flag == True) or (early_stop_flag == True):
+#                    pass
+#                else:
+#                    print('Saving...')
+#                    saver.save(sess, save_path)
+#                    print('Training complete!')
     
     def visualize_decoded_image(self, X, save_str='./checkpoints/'):
         ''' Compares the autoencoded image with the original side-by-side. '''
@@ -284,6 +284,7 @@ class ConvolutionalAutoencoder(object):
                 height, width, c_in, c_out = F.shape
                 # Plot them all side by side (16 = 4*4)
                 plt.figure('Filters')
+                plt.clf()
                 for i in range(c_in):
                     for j in range(c_out):
                         f = F[:,:,i,j]
@@ -292,116 +293,116 @@ class ConvolutionalAutoencoder(object):
                 plt.draw()
 
 # Define computational graph for Q-network
-class QNetwork(object):
-    '''
-    A class which encapsulates a pong-playing Q-network. The network consists of a CNN which takes (preprocessed) images of the playing screen as input, and outputs a vector of values which give the expected discounted reward of the next state for each possible action. In this sense, the network acts as a function approximator for the value function Q(s,a).
-    '''
-    def __init__(self, input_spec, conv_spec, dense_spec, activation='relu', regularization=None):
-        ''' Initializes Q-network. '''
-        self.graph = self.define_graph(input_spec, conv_spec, dense_spec, activation, regularization)
-        self.X = self.graph.get_tensor_by_name('X:0')
-        self.Y = self.graph.get_tensor_by_name('Y:0')
-        self.Z = self.graph.get_tensor_by_name('Z:0')
-        self.Loss = self.graph.get_tensor_by_name('Loss:0')
-        self.Lambda = self.graph.get_tensor_by_name('Lambda:0')
-    
-    def define_graph(self, input_spec, conv_spec, dense_spec, activation='relu', regularization=None):
-        
-        if activation == 'relu':
-            def a(x, name=None):
-                return tf.nn.relu(x, name=name)
-        elif activation == 'tanh':
-            def a(x, name=None):
-                return tf.nn.tanh(x, name=name)
-        elif activation == 'lrelu':
-            def a(x, name=None):
-                return tf.maximum(0.1*x, x, name=name)
-        
-        # Create graph
-        G = tf.Graph()
-        height, width, depth = input_spec
-        with G.as_default():
-            np.random.seed(seed)
-            tf.set_random_seed(seed)
-            
-            # Input layer
-            X = tf.placeholder(dtype=tf.float32, shape=[None,height,width,depth], name='X')
-            A = X
-            
-            # Build encoder layers
-            layer_idx = 0
-            for layer in conv_spec[:-1]:
-                layer_idx += 1
-                filter_dims, stride = layer
-                h, w, c_in, c_out = filter_dims
-                W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-                b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-                A = tf.nn.max_pool(a(tf.nn.conv2d(A, W, strides=stride, padding='VALID') + b), ksize=[1,2,2,1], strides=[1,2,2,1], padding='VALID', name='A'+str(layer_idx))
-                
-            # Build latent feature layer (last step of the encoder)
-            layer_idx += 1
-            filter_dims, stride = conv_spec[-1]
-            h, w, c_in, c_out = filter_dims
-            W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-            b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-            Z = tf.add(tf.nn.conv2d(A, W, strides=stride, padding='VALID'), b, name='Z')
-            A = a(Z, name='A'+str(layer_idx))
-            A = tf.contrib.layers.flatten(A)
-            
-            # Build dense layers
-            for c_out in dense_spec[:-1]:
-                layer_idx += 1
-                c_in = tf.shape(A)[-1]
-                W = tf.Variable(tf.random_normal((c_in, c_out))*np.sqrt(2/(c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-                b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-                A = a(tf.matmul(A, W) + b, name='A'+str(layer_idx))
-            
-            # Build output layer (last dense layer)
-            layer_idx += 1
-            c_out = dense_spec[-1]
-            c_in = tf.shape(A)[-1]
-            W = tf.Variable(tf.random_normal((c_in, c_out))*np.sqrt(2/(c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-            b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-            Y = tf.add(tf.matmul(A, W), b, name='Y')
-            
-            # Calculate regularization (if applicable)
-#            reg_loss = tf.constant(0, dtype=tf.float32)
-#            reg_lambda = tf.placeholder(dtype=tf.float32, shape=[], name='Lambda')
-#            if regularization == 'L2':
-#                for l in range(1, 1+len(conv_spec)):
-#                    reg_loss += tf.reduce_sum(G.get_tensor_by_name('W'+str(l)+':0')**2)
-#                reg_loss *= reg_lambda
-#            elif regularization == 'L1':
-#                for l in range(1, 1+len(conv_spec)):
-#                    reg_loss += tf.reduce_sum(tf.abs(G.get_tensor_by_name('W'+str(l)+':0')))
-#                reg_loss *= reg_lambda
-            
-            # Calculate loss
-            # NEED TO MAKE Q THE RIGHT SHAPE!
-            Q = tf.placeholder(dtype=tf.float32, shape=[None], name='Q')
-            a = tf.placeholder(dtype=tf.int32, shape=[None], name='a')
-            Q_mask = tf.one_hot(a, depth=3, dtype=tf.int32, axis=-1)
-            
-            Loss = tf.reduce_mean((tf.reduce_sum(Q_mask*Y, axis=1)-Q)**2, name='Loss')
-        
-        # Return the computational graph
-        return G
-    
-    def pretrain_conv_layers(self):
-        ''' Trains the first convolutional layers by using an autoencoder to learn appropriate convolutional filters. '''
-        pass
-    
-    def load_pretrained_layers(self):
-        ''' Loads the weights for the convolutional layers pretrained on the convolutional autoencoder. '''
-        pass
-    
-    def train(self):
-        ''' Trains the Q-network by playing Pong games. '''
-        pass
-    
-    def play(self):
-        ''' Plays Pong using learned parameters. '''
-        pass
+#class QNetwork(object):
+#    '''
+#    A class which encapsulates a pong-playing Q-network. The network consists of a CNN which takes (preprocessed) images of the playing screen as input, and outputs a vector of values which give the expected discounted reward of the next state for each possible action. In this sense, the network acts as a function approximator for the value function Q(s,a).
+#    '''
+#    def __init__(self, input_spec, conv_spec, dense_spec, activation='relu', regularization=None):
+#        ''' Initializes Q-network. '''
+#        self.graph = self.define_graph(input_spec, conv_spec, dense_spec, activation, regularization)
+#        self.X = self.graph.get_tensor_by_name('X:0')
+#        self.Y = self.graph.get_tensor_by_name('Y:0')
+#        self.Z = self.graph.get_tensor_by_name('Z:0')
+#        self.Loss = self.graph.get_tensor_by_name('Loss:0')
+#        self.Lambda = self.graph.get_tensor_by_name('Lambda:0')
+#    
+#    def define_graph(self, input_spec, conv_spec, dense_spec, activation='relu', regularization=None):
+#        
+#        if activation == 'relu':
+#            def a(x, name=None):
+#                return tf.nn.relu(x, name=name)
+#        elif activation == 'tanh':
+#            def a(x, name=None):
+#                return tf.nn.tanh(x, name=name)
+#        elif activation == 'lrelu':
+#            def a(x, name=None):
+#                return tf.maximum(0.1*x, x, name=name)
+#        
+#        # Create graph
+#        G = tf.Graph()
+#        height, width, depth = input_spec
+#        with G.as_default():
+#            np.random.seed(seed)
+#            tf.set_random_seed(seed)
+#            
+#            # Input layer
+#            X = tf.placeholder(dtype=tf.float32, shape=[None,height,width,depth], name='X')
+#            A = X
+#            
+#            # Build encoder layers
+#            layer_idx = 0
+#            for layer in conv_spec[:-1]:
+#                layer_idx += 1
+#                filter_dims, stride = layer
+#                h, w, c_in, c_out = filter_dims
+#                W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
+#                b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
+#                A = tf.nn.max_pool(a(tf.nn.conv2d(A, W, strides=stride, padding='VALID') + b), ksize=[1,2,2,1], strides=[1,2,2,1], padding='VALID', name='A'+str(layer_idx))
+#                
+#            # Build latent feature layer (last step of the encoder)
+#            layer_idx += 1
+#            filter_dims, stride = conv_spec[-1]
+#            h, w, c_in, c_out = filter_dims
+#            W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
+#            b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
+#            Z = tf.add(tf.nn.conv2d(A, W, strides=stride, padding='VALID'), b, name='Z')
+#            A = a(Z, name='A'+str(layer_idx))
+#            A = tf.contrib.layers.flatten(A)
+#            
+#            # Build dense layers
+#            for c_out in dense_spec[:-1]:
+#                layer_idx += 1
+#                c_in = tf.shape(A)[-1]
+#                W = tf.Variable(tf.random_normal((c_in, c_out))*np.sqrt(2/(c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
+#                b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
+#                A = a(tf.matmul(A, W) + b, name='A'+str(layer_idx))
+#            
+#            # Build output layer (last dense layer)
+#            layer_idx += 1
+#            c_out = dense_spec[-1]
+#            c_in = tf.shape(A)[-1]
+#            W = tf.Variable(tf.random_normal((c_in, c_out))*np.sqrt(2/(c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
+#            b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
+#            Y = tf.add(tf.matmul(A, W), b, name='Y')
+#            
+#            # Calculate regularization (if applicable)
+##            reg_loss = tf.constant(0, dtype=tf.float32)
+##            reg_lambda = tf.placeholder(dtype=tf.float32, shape=[], name='Lambda')
+##            if regularization == 'L2':
+##                for l in range(1, 1+len(conv_spec)):
+##                    reg_loss += tf.reduce_sum(G.get_tensor_by_name('W'+str(l)+':0')**2)
+##                reg_loss *= reg_lambda
+##            elif regularization == 'L1':
+##                for l in range(1, 1+len(conv_spec)):
+##                    reg_loss += tf.reduce_sum(tf.abs(G.get_tensor_by_name('W'+str(l)+':0')))
+##                reg_loss *= reg_lambda
+#            
+#            # Calculate loss
+#            # NEED TO MAKE Q THE RIGHT SHAPE!
+#            Q = tf.placeholder(dtype=tf.float32, shape=[None], name='Q')
+#            a = tf.placeholder(dtype=tf.int32, shape=[None], name='a')
+#            Q_mask = tf.one_hot(a, depth=3, dtype=tf.int32, axis=-1)
+#            
+#            Loss = tf.reduce_mean((tf.reduce_sum(Q_mask*Y, axis=1)-Q)**2, name='Loss')
+#        
+#        # Return the computational graph
+#        return G
+#    
+#    def pretrain_conv_layers(self):
+#        ''' Trains the first convolutional layers by using an autoencoder to learn appropriate convolutional filters. '''
+#        pass
+#    
+#    def load_pretrained_layers(self):
+#        ''' Loads the weights for the convolutional layers pretrained on the convolutional autoencoder. '''
+#        pass
+#    
+#    def train(self):
+#        ''' Trains the Q-network by playing Pong games. '''
+#        pass
+#    
+#    def play(self):
+#        ''' Plays Pong using learned parameters. '''
+#        pass
     
     
 
@@ -589,17 +590,17 @@ cae.visualize_decoded_image(X_val)
 # Reload screen data and format for training
 #X_train, X_val = shuffle_pong_dataset(load_pong_dataset(), val_frac=0.02)
 # Build autoencoder and train on Pong screens
-cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((5,5,6,4), (1,1,1,1)), ((5,5,4,16), (1,1,1,1)), ((3,3,16,32), (1,1,1,1))], decoder_spec=[((3,3,32,16), (1,1,1,1), (37,37,16)), ((6,6,16,4), (1,2,2,1), (78,78,4)), ((6,6,4,4), (1,2,2,1), (160,160,4))], activation='lrelu', regularization='L2')
+cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((10,10,6,21), (1,1,1,1), 'SAME'), ((5,5,21,32), (1,1,1,1), 'SAME'), ((3,3,32,32), (1,1,1,1), 'SAME')], decoder_spec=[((3,3,32,32), (1,1,1,1), 'SAME', (40,40,32)), ((5,5,32,16), (1,2,2,1), 'SAME', (80,80,16)), ((10,10,16,4), (1,2,2,1), 'SAME', (160,160,4))], activation='lrelu', regularization='L2')
 # Encoder layers:
-# First layer: (5,5,4,16) filter, (1,1,1,1) stride, 2x2 max pool, (78,78,16) output
-# Second layer: (5,5,16,32) filter, (1,1,1,1) stride, 2x2 max pool, (37,37,32) output
-# Third layer: (3,3,32,64) filter, (1,1,1,1) stride, (35,35,64) output
+# First layer: (10,10,6,21) filter, (1,1,1,1) stride, same pad, 2x2 max pool, (80,80,21) output
+# Second layer: (5,5,21,32) filter, (1,1,1,1) stride, same pad, 2x2 max pool, (40,40,32) output
+# Third layer: (3,3,32,32) filter, (1,1,1,1) stride, same pad, (40,40,32) output
 # Decoder layers:
-# First layer: (3,3,64,32) filter, (1,1,1,1) stride, (37,37,32) output
-# Second layer: (6,6,32,16) filter, (1,2,2,1) stride, (78,78,16) output
-# Third layer: (6,6,16,4) filter, (1,2,2,1) stride, (160,160,4) output
+# First layer: (3,3,32,32) filter, (1,1,1,1) stride, same pad, (40,40,32) output
+# Second layer: (5,5,32,16) filter, (1,2,2,1) stride, same pad, (80,80,16) output
+# Third layer: (10,10,16,4) filter, (1,2,2,1) stride, same pad, (160,160,4) output
 
-cae.train(X_train, lr0=1e-3, max_epochs=100, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000, max_early_stopping_epochs=10)
+cae.train(X_train, lr0=1e-3, max_epochs=70, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000, max_early_stopping_epochs=10)
 
 #cae.visualize_decoded_image(X_val, save_str='./checkpoints')
 #cae.visualize_conv_filters(layer=1, save_str='./checkpoints')
