@@ -7,12 +7,13 @@ Q-learning algorithm to play Pong. Using convolutional autoencoder (CAE) to pret
 The autoencoder is a several-layer convolutional network that has an encoder and decoder part. The encoder takes pong screens of dimension (160,160,4) in, where the last dimension is the previous 4 iterations of the game. It then adds two channels which are just the (x,y) coordinates of the pixels at each point (normalized to [-1,1]); hopefully this allows the features to propagate the global positions of features to later layers. Each layer of the encoder then downsamples the activation map using max pools and valid padding until it reaches the latent feature layer. The decoder layers are transpose convolutions that upsample the features until the output is the same size as the input. The loss is then calculated by taking the squared difference of the pixel intensities of the input and output.
 
 To do:
+    - Add in "advantage function" that subtracts off the mean of Q over many frames, so that the network only has to learn values relative to the mean, and not the absolute value.
     - Make an adaptive gamma so that gamma = exp(-1/n), where n is a running average of the number of frames between rewards.
-    - Normalize the pixel coordinate layers to zero mean an unit variance (uniform distribution so sigma^2 = L^2/12, where L is the interval)
+    x Normalize the pixel coordinate layers to zero mean an unit variance (uniform distribution so sigma^2 = L^2/12, where L is the interval)
     - Figure out optimal CNN layers for autoencoding
-        - Add two additional input channels which are just pixel coordinates (x,y); could be that convolution only discerns information about local structure of images, but we also care about the global structure as well.
+        x Add two additional input channels which are just pixel coordinates (x,y); could be that convolution only discerns information about local structure of images, but we also care about the global structure as well.
     x Figure out a way to write plot data to a .txt or .npy file so that I can run the code on dover and then just interrogate the output file. Or maybe even look into using tensorboard.
-    - Figure out how to attach encoder layers to Q-network
+    x Figure out how to attach encoder layers to Q-network
 
 @author: Eric Cotner
 """
