@@ -682,7 +682,7 @@ def collect_pong_screens(max_episodes, steps_to_skip=1, max_to_keep=10**4):
             print('Number of frames collected: {}'.format(len(frame_list)))
     # Save frames to disk
     print('Saving frames to disk...')
-    np.save('../../Pong_frames.npy', np.stack(frame_list, axis=-1))
+    np.save('./Pong_frames.npy', np.stack(frame_list, axis=-1))
     print('Frames saved!')
 
 def make_validation_screens(val_size=150):
@@ -692,10 +692,11 @@ def make_validation_screens(val_size=150):
     print('Creating validation set...')
     for i in range(val_size):
         X_val[i,:,:,:] = X_raw[:,:,perm_idx[i]-4:perm_idx[i]]
-    np.save('../../val_Pong_frames.npy', X_val)
+    np.save('./val_Pong_frames.npy', X_val)
+    print('Done!')
 
 def get_validation_screens():
-    X_val = np.load('../../val_Pong_frames.npy')
+    X_val = np.load('./val_Pong_frames.npy')
     return X_val
 
 # Load MNIST dataset
@@ -712,7 +713,7 @@ def load_MNIST_dataset():
 # Load the collected Pong screens
 def load_pong_dataset():
     print('Loading pong frames...')
-    X_raw = np.load('../../Pong_frames.npy')
+    X_raw = np.load('./Pong_frames.npy')
     print('Frames loaded!')
     return X_raw
 
@@ -784,26 +785,28 @@ cae.visualize_decoded_image(X_val)
 # Reload screen data and format for training
 #X_train, X_val = shuffle_pong_dataset(load_pong_dataset(), val_frac=0.02)
 # Build autoencoder and train on Pong screens
-#cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((10,10,6,21), (1,1,1,1), 'SAME'), ((5,5,21,32), (1,1,1,1), 'SAME'), ((3,3,32,32), (1,1,1,1), 'SAME')], decoder_spec=[((3,3,32,32), (1,1,1,1), 'SAME', (40,40,32)), ((5,5,32,16), (1,2,2,1), 'SAME', (80,80,16)), ((10,10,16,4), (1,2,2,1), 'SAME', (160,160,4))], activation='lrelu', regularization='L2')
+#cae = ConvolutionalAutoencoder(input_spec=(160,160,4), encoder_spec=[((4,4,6,16), (1,1,1,1), 'SAME'), ((4,4,16,16), (1,1,1,1), 'SAME'), ((4,4,16,16), (1,1,1,1), 'SAME')], decoder_spec=[((4,4,16,16), (1,2,2,1), 'SAME', (80,80,16)), ((4,4,16,4), (1,2,2,1), 'SAME', (160,160,4))], activation='lrelu', regularization='L2')
 # Encoder layers:
-# First layer: (10,10,6,21) filter, (1,1,1,1) stride, same pad, 2x2 max pool, (80,80,21) output
-# Second layer: (5,5,21,32) filter, (1,1,1,1) stride, same pad, 2x2 max pool, (40,40,32) output
-# Third layer: (3,3,32,32) filter, (1,1,1,1) stride, same pad, (40,40,32) output
+# First layer: (4,4,6,16) filter, (1,1,1,1) stride, same pad, 2x2 max pool, (80,80,16) output
+# Second layer: (4,4,6,16) filter, (1,1,1,1) stride, same pad, 2x2 max pool, (40,40,16) output
+# Third (latent) layer: (4,4,16,16) filter, (1,1,1,1) stride, same pad, (40,40,16) output
 # Decoder layers:
-# First layer: (3,3,32,32) filter, (1,1,1,1) stride, same pad, (40,40,32) output
-# Second layer: (5,5,32,16) filter, (1,2,2,1) stride, same pad, (80,80,16) output
-# Third layer: (10,10,16,4) filter, (1,2,2,1) stride, same pad, (160,160,4) output
+# First layer: (4,4,16,16) filter, (1,2,2,1) stride, same pad, (80,80,16) output
+# Second layer: (4,4,16,4) filter, (1,2,2,1) stride, same pad, (160,160,4) output
 
-#cae.train(X_train, lr0=1e-3, max_epochs=100, batch_size=32, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./checkpoints', plot_every_n_steps=25, save_every_n_epochs=10000, max_early_stopping_epochs=10)
+#cae.train(X_train, lr0=1e-3, max_epochs=50, batch_size=64, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./Checkpoints/5/CAE_pretrain', plot_every_n_steps=25, save_every_n_epochs=10**10, max_early_stopping_epochs=10)
 
-#cae.visualize_decoded_image(X_val, save_str='./Seed1/checkpoints')
-#cae.visualize_conv_filters(layer=1, save_str='./Seed1/checkpoints')
+#cae.visualize_decoded_image(X_val, save_str='./Checkpoints/5/CAE_pretrain')
+#cae.visualize_conv_filters(layer=1, save_str='./Checkpoints/5/CAE_pretrain')
 
 # Attach Q-network to the end of the autoencoder
-qnn = QNetwork(dense_spec=[(100, 0.5), (100, 0.5), 3], cae_path='./Seed1/checkpoints', activation='relu', regularization=None)
+qnn = QNetwork(dense_spec=[(32, 0.3), (32, 0.3), 3], cae_path='./Checkpoints/5/CAE_pretrain', activation='relu', regularization=None)
+# First layer: 32 neurons, 0.3 dropout rate
+# Second layer: 32 neurons, 0.3 dropout rate
+# Output layer: 3 neurons (corresponding to the 3 available actions)
 
 # Fine-tune the Q-network
-qnn.train(lr=1e-7, gamma=np.exp(-1/100), max_episodes=200, batch_size=10, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.6, reload_parameters=False, save_path='./Q_checkpoints_1', plot_every_n_steps=50, save_every_n_episodes=1)
+qnn.train(lr=1e-7, gamma=np.exp(-1/100), max_episodes=200, batch_size=64, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.5, reload_parameters=True, save_path='./Checkpoints/5/QNN', plot_every_n_steps=50, save_every_n_episodes=1)
 
 # Playtest
 #qnn_play(meta_path='./Q_checkpoints_2.meta', checkpoint_path='./Q_checkpoints_2', mode='softmax')
