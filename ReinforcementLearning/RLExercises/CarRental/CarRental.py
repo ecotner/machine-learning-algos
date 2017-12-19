@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 def poisson(n, mean):
     return math.exp(-mean)*(mean**n)/math.factorial(n)
 
-def clipped_poisson(n, mean, maximum=20):
+def clipped_poisson(n, mean, maximum=10):
     ''' Since the number of cars can't go above a certain limit, we move all the probability mass above the maximum into the probability of the maximum. '''
     if n == maximum:
         return 1 - sum([poisson(m, mean) for m in range(maximum)])
@@ -47,18 +47,26 @@ class Environment(object):
         ''' 
 #        prob = np.zeros((self.max_cars, self.max_cars, self.reward_rented*self.n_locations*self.max_cars - self.reward_trans*self.max_transfer, self.max_cars, self.max_cars, 1+2*self.max_transfer))
         prob = {}
-        for n1 in range(self.max_cars):
-            for n2 in range(self.max_cars):
+#        for n1 in range(self.max_cars+1):
+#            for n2 in range(self.max_cars+1):
+#                print("n1={}, n2={}".format(n1, n2))
+#                for n1_rented in range(n1+1):
+#                    for n2_rented in range(n2+1):
+#                        for n1_returned in range((self.max_cars - max(0,n1-n1_rented))+1):
+#                            for n2_returned in range((self.max_cars - max(0,n2-n2_rented))+1):
+#                                for a in range(-self.max_transfer, self.max_transfer+1):
+        for n1 in range(self.max_cars+1):
+            for n2 in range(self.max_cars+1):
                 print("n1={}, n2={}".format(n1, n2))
-                for n1_rented in range(n1+1):
-                    for n2_rented in range(n2+1):
-                        for n1_returned in range((self.max_cars - max(0,n1-n1_rented))+1):
-                            for n2_returned in range((self.max_cars - max(0,n2-n2_rented))+1):
-                                for a in range(-self.max_transfer, self.max_transfer+1):
+                for a in range(max(-self.max_transfer,-n1,n2-self.max_cars), min(self.max_cars-n1,n2,self.max_transfer)+1):
+                    for n1_rented in range(min(self.max_cars,n1+a)+1):
+                        for n2_rented in range(min(self.max_cars,n2-a)+1):
+                            for n1_returned in range(self.max_cars-(n1+a-n1_rented)+1):
+                                for n2_returned in range(self.max_cars-(n2-a-n2_rented)+1):
                                     n1_ = min(self.max_cars, max(0, n1+a-n1_rented)+n1_returned)
                                     n2_ = min(self.max_cars, max(0, n2-a-n2_rented)+n2_returned)
                                     r = self.reward_rented*(min(n1+a,n1_rented) + min(n2-a,n2_rented)) + self.reward_trans*abs(a)
-                                    prob_ = clipped_poisson(n1_rented, self.mean_rented[0])*clipped_poisson(n2_rented, self.mean_rented[1])*clipped_poisson(n1_returned, self.mean_returned[0])*clipped_poisson(n2_returned, self.mean_returned[1])
+                                    prob_ = clipped_poisson(n1_rented, self.mean_rented[0],min(self.max_cars,n1+a))*clipped_poisson(n2_rented, self.mean_rented[1],min(self.max_cars,n2-a))*clipped_poisson(n1_returned, self.mean_returned[0],self.max_cars-(n1+a-n1_rented))*clipped_poisson(n2_returned, self.mean_returned[1],self.max_cars-(n2+a-n2_rented))
                                     prob[(n1_, n2_, r, n1, n2, a)] = prob.get((n1_, n2_, r, n1, n2, a), 0) + prob_
         return prob
 
