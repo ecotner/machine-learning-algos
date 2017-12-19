@@ -10,6 +10,7 @@ Notes:
     - Keep replay memory to under 1200 experiences or memory consumption becomes too high.
 
 To do:
+    - Why is the output of the network converging to a single value?
     - Add in "advantage function" that subtracts off the mean of Q over many frames, so that the network only has to learn values relative to the mean, and not the absolute value.
     - Make an adaptive gamma so that gamma = exp(-1/n), where n is a running average of the number of frames between rewards.
     x Normalize the pixel coordinate layers to zero mean an unit variance (uniform distribution so sigma^2 = L^2/12, where L is the interval)
@@ -374,6 +375,7 @@ class QNetwork(object):
             
             # Calculate loss
             # NEED TO MAKE Q THE RIGHT SHAPE!
+            # Why is Q only 1d? Shouldn't it have two dimensions? (batch and action)
             Q = tf.placeholder(dtype=tf.float32, shape=[None], name='Q')
             action = tf.placeholder(dtype=tf.int32, shape=[None], name='a')
             Q_mask = tf.one_hot(action, depth=3, dtype=tf.float32, axis=-1)
@@ -810,7 +812,7 @@ qnn = QNetwork(dense_spec=[(32, 0.3), (32, 0.3), 3], cae_path='./Checkpoints/5/C
 # Output layer: 3 neurons (corresponding to the 3 available actions)
 
 # Fine-tune the Q-network
-qnn.train(lr=1e-7, gamma=np.exp(-1/100), max_episodes=200, batch_size=64, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.1, reload_parameters=True, save_path='./Checkpoints/5/QNN', plot_every_n_steps=50, save_every_n_episodes=1)
+qnn.train(lr=3e-4, gamma=np.exp(-1/100), max_episodes=100, batch_size=64, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.5, reload_parameters=True, save_path='./Checkpoints/5/QNN', plot_every_n_steps=50, save_every_n_episodes=1)
 
 # Playtest
 #qnn_play(meta_path='./Q_checkpoints_2.meta', checkpoint_path='./Q_checkpoints_2', mode='softmax')
