@@ -1,0 +1,1 @@
+Practice problems from Sutton and Barto's textbook "Introduction to Reinforcement Learning (2016)", which can be found at http://ufal.mff.cuni.cz/~straka/courses/npfl114/2016/sutton-bookdraft2016sep.pdf.
