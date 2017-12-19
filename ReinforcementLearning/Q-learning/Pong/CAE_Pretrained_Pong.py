@@ -6,6 +6,9 @@ Q-learning algorithm to play Pong. Using convolutional autoencoder (CAE) to pret
 
 The autoencoder is a several-layer convolutional network that has an encoder and decoder part. The encoder takes pong screens of dimension (160,160,4) in, where the last dimension is the previous 4 iterations of the game. It then adds two channels which are just the (x,y) coordinates of the pixels at each point (normalized to [-1,1]); hopefully this allows the features to propagate the global positions of features to later layers. Each layer of the encoder then downsamples the activation map using max pools and valid padding until it reaches the latent feature layer. The decoder layers are transpose convolutions that upsample the features until the output is the same size as the input. The loss is then calculated by taking the squared difference of the pixel intensities of the input and output.
 
+Notes:
+    - Keep replay memory to under 1200 experiences or memory consumption becomes too high.
+
 To do:
     - Add in "advantage function" that subtracts off the mean of Q over many frames, so that the network only has to learn values relative to the mean, and not the absolute value.
     - Make an adaptive gamma so that gamma = exp(-1/n), where n is a running average of the number of frames between rewards.
@@ -417,8 +420,9 @@ class QNetwork(object):
                 if reload_parameters:
                     print('Reloading from last checkpoint...')
                     saver.restore(sess, save_path)
-                print('Initializing variables...')
-                sess.run(tf.global_variables_initializer())
+                else:
+                    print('Initializing variables...')
+                    sess.run(tf.global_variables_initializer())
                 # Create a frame list and other lists for monitoring stuff
                 frame_list = []
                 replay_memory = []
@@ -505,7 +509,7 @@ class QNetwork(object):
                         print('Saving checkpoint...')
                         saver.save(sess, save_path)
     
-    def add_to_replay_memory(self, frame_list, action, reward, done, replay_memory, max_to_keep=5000):
+    def add_to_replay_memory(self, frame_list, action, reward, done, replay_memory, max_to_keep=700):
         ''' Adds most recent frames, rewards, and done flags to the replay memory list. '''
         experience = (np.concatenate(frame_list[-5:-1], axis=-1), np.concatenate(frame_list[-4:], axis=-1), action, reward, done)
         add_to_list(replay_memory, [experience])
@@ -806,7 +810,7 @@ qnn = QNetwork(dense_spec=[(32, 0.3), (32, 0.3), 3], cae_path='./Checkpoints/5/C
 # Output layer: 3 neurons (corresponding to the 3 available actions)
 
 # Fine-tune the Q-network
-qnn.train(lr=1e-7, gamma=np.exp(-1/100), max_episodes=200, batch_size=64, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.5, reload_parameters=True, save_path='./Checkpoints/5/QNN', plot_every_n_steps=50, save_every_n_episodes=1)
+qnn.train(lr=1e-7, gamma=np.exp(-1/100), max_episodes=200, batch_size=64, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.1, reload_parameters=True, save_path='./Checkpoints/5/QNN', plot_every_n_steps=50, save_every_n_episodes=1)
 
 # Playtest
 #qnn_play(meta_path='./Q_checkpoints_2.meta', checkpoint_path='./Q_checkpoints_2', mode='softmax')
