@@ -512,7 +512,7 @@ class QNetwork(object):
     def add_to_replay_memory(self, frame_list, action, reward, done, replay_memory, max_to_keep=700):
         ''' Adds most recent frames, rewards, and done flags to the replay memory list. '''
         experience = (np.concatenate(frame_list[-5:-1], axis=-1), np.concatenate(frame_list[-4:], axis=-1), action, reward, done)
-        add_to_list(replay_memory, [experience])
+        add_to_list(replay_memory, [experience], max_to_keep)
     
     def sample_from_replay_memory(self, replay_memory, batch_size):
         ''' Samples a batch of experiences from replay memory, then assempbles them into numpy arrays and returns a bunch of stuff. '''
