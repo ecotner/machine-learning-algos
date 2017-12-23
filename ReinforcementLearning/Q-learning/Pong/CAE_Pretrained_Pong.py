@@ -78,6 +78,7 @@ class ConvolutionalAutoencoder(object):
                 return tf.maximum(x/5.5, x, name=name)
         
         # Create graph
+        tf.reset_default_graph()
         G = tf.Graph()
         height, width, depth = input_spec
         with G.as_default():
@@ -93,6 +94,7 @@ class ConvolutionalAutoencoder(object):
             pix_coords = tf.constant((np.concatenate([pix_x, pix_y], axis=-1)-max(height,width)/2)/(max(height,width)*np.sqrt(12)), dtype=tf.float32)
             pix_coords = tf.tile(pix_coords, [batch_dim,1,1,1])
             A = tf.concat([X, pix_coords], axis=-1)
+            out_dims = [160,160,6]
             
             # Build encoder layers
             layer_idx = 0
@@ -100,17 +102,28 @@ class ConvolutionalAutoencoder(object):
                 layer_idx += 1
                 filter_dims, stride, pad_spec = layer
                 h, w, c_in, c_out = filter_dims
+                if pad_spec.upper() == 'VALID':
+                    out_dims = [int(np.ceil((out_dims[0]-h+1)/stride[1])), int(np.ceil((out_dims[1]-w+1)/stride[2])), c_out]
+                elif pad_spec.upper() == 'SAME':
+                    out_dims = [int(np.ceil((out_dims[0])/stride[1])), int(np.ceil((out_dims[1])/stride[2])), c_out]
                 W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-                b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-                A = tf.nn.max_pool(a(tf.nn.conv2d(A, W, strides=stride, padding=pad_spec) + b), ksize=[1,2,2,1], strides=[1,2,2,1], padding='VALID', name='A'+str(layer_idx))
+                Z = tf.nn.conv2d(A, W, strides=stride, padding=pad_spec)
+                b = tf.Variable(np.zeros(out_dims), dtype=tf.float32, name='b'+str(layer_idx))
+                A = tf.nn.max_pool(a(Z + b), ksize=[1,2,2,1], strides=[1,2,2,1], padding='VALID', name='A'+str(layer_idx))
+                out_dims = [int(np.ceil((out_dims[0]-2+1)/2)), int(np.ceil((out_dims[1]-2+1)/2)), c_out]
                 
             # Build latent feature layer (last step of the encoder)
             layer_idx += 1
             filter_dims, stride, pad_spec = encoder_spec[-1]
             h, w, c_in, c_out = filter_dims
+            if pad_spec.upper() == 'VALID':
+                out_dims = [int(np.ceil((out_dims[0]-h+1)/stride[1])), int(np.ceil((out_dims[1]-w+1)/stride[2])), c_out]
+            elif pad_spec.upper() == 'SAME':
+                out_dims = [int(np.ceil((out_dims[0])/stride[1])), int(np.ceil((out_dims[1])/stride[2])), c_out]
             W = tf.Variable(np.random.randn(h, w, c_in, c_out)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-            b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-            Z = tf.add(tf.nn.conv2d(A, W, strides=stride, padding=pad_spec), b, name='Z')
+            Z = tf.nn.conv2d(A, W, strides=stride, padding=pad_spec)
+            b = tf.Variable(np.zeros(out_dims), dtype=tf.float32, name='b'+str(layer_idx))
+            Z = tf.add(Z, b, name='Z')
             A = a(Z, name='A'+str(layer_idx))
             
             # Build decoder layers
@@ -119,16 +132,18 @@ class ConvolutionalAutoencoder(object):
                 filter_dims, stride, pad_spec, output_dims = layer
                 h, w, c_in, c_out = filter_dims
                 W = tf.Variable(np.random.randn(h, w, c_out, c_in)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-                b = tf.Variable(np.zeros((c_out,)), dtype=tf.float32, name='b'+str(layer_idx))
-                A = a(tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding=pad_spec) + b, name='A'+str(layer_idx))
+                Z = tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding=pad_spec)
+                b = tf.Variable(np.zeros([output_dims[0], output_dims[1], output_dims[2]]), dtype=tf.float32, name='b'+str(layer_idx))
+                A = a(Z + b, name='A'+str(layer_idx))
             
             # Build output layer (last layer of decoder)
             layer_idx += 1
             filter_dims, stride, pad_spec, output_dims = decoder_spec[-1]
             h, w, c_in, c_out = filter_dims
             W = tf.Variable(np.random.randn(h, w, c_out, c_in)*np.sqrt(2/(h*w*c_in+c_out)), dtype=tf.float32, name='W'+str(layer_idx))
-            b = tf.Variable(np.zeros((output_dims[2],)), dtype=tf.float32, name='b'+str(layer_idx))
-            Y = tf.add(tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding=pad_spec), b, name='Y')
+            Z = tf.nn.conv2d_transpose(A, W, output_shape=[tf.shape(X)[0], output_dims[0], output_dims[1], output_dims[2]], strides=stride, padding=pad_spec)
+            b = tf.Variable(np.zeros([output_dims[0], output_dims[1], output_dims[2]]), dtype=tf.float32, name='b'+str(layer_idx))
+            Y = tf.add(Z, b, name='Y')
             
             # Calculate regularization (if applicable)
             reg_loss = tf.constant(0, dtype=tf.float32)
@@ -173,6 +188,7 @@ class ConvolutionalAutoencoder(object):
             # Make minibatches
             print('Making minibatches...')
             minibatches = make_minibatches(X_train, batch_size=batch_size, batch_axis=0)
+            del X_train
             print('Minibatches done!')
             n_batches = len(minibatches)
             # Create TF Session
@@ -334,6 +350,7 @@ class QNetwork(object):
                 return tf.maximum(0.1*x, x, name=name)
         
         # Create graph (get autoencoder graph first, then append)
+        tf.reset_default_graph()
         G = self.load_pretrained_layers(cae_path)
         with G.as_default():
             np.random.seed(seed)
@@ -343,7 +360,7 @@ class QNetwork(object):
             Z = G.get_tensor_by_name('Z:0')
             A = a(tf.contrib.layers.flatten(Z))
             
-            # Build encoder layers
+            # Build dense layers
             layer_idx = 0
             for layer in dense_spec[:-1]:
                 layer_idx += 1
@@ -401,7 +418,8 @@ class QNetwork(object):
         return cae_graph
     
     def train(self, lr, gamma, max_episodes, batch_size=32, steps_to_skip=1, policy='softmax', epsilon=0.5, reload_parameters=False, save_path=None, plot_every_n_steps=25, save_every_n_episodes=1):
-        ''' Trains the Q-network by playing Pong games. '''        
+        ''' Trains the Q-network by playing Pong games. '''
+        action_map = {1:'Stay', 2:'Up', 3:'Down'}
         # Initialize the Pong gym environment, set seeds
         env = gym.make('Pong-v0')
         np.random.seed(seed)
@@ -430,10 +448,14 @@ class QNetwork(object):
                 replay_memory = []
                 X_val = get_validation_screens()
                 Q_val_list = []
+                avg_reward_list = []
+                episode_length_list = []
+                avg_reward = 0
+                reward_decay_factor = np.exp(-1/600) # Decay factor for average rewards
                 step_list = []
                 global_step = 0
                 avg_grad = 1e4      # Track avg gradient for clipping
-                grad_decay_rate = np.exp(-1/600)
+                grad_decay_factor = np.exp(-1/600)
                 nan_flag = False    # Keep track of nan values appearing in computation and exit if they occur
                 # Iterate over episodes
                 global_step = 0
@@ -479,38 +501,55 @@ class QNetwork(object):
                         y2 = sess.run(self.YQ, feed_dict={self.X:s2})
                         Q_expected = reward + (1-d)*gamma*np.max(y2, axis=1)
                         # Perform training op on batch
-                        _, current_grad, loss = sess.run([train_op, global_norm, self.QLoss], feed_dict={self.X:s1, self.Q:Q_expected, self.action:(a-1), clip_norm:5*avg_grad})
+                        _, current_grad, loss, y1 = sess.run([train_op, global_norm, self.QLoss, self.YQ], feed_dict={self.X:s1, self.Q:Q_expected, self.action:(a-1), clip_norm:5*avg_grad})
                         # Exit if nan
                         if loss == np.nan:
                             print('nan error, exiting training')
                             nan_flag = True
                             break
                         # Update avg gradient norm
-                        avg_grad = (1-grad_decay_rate)*current_grad + grad_decay_rate*avg_grad
+                        avg_grad = (1-grad_decay_factor)*current_grad + grad_decay_factor*avg_grad
                         # Calculate/plot performance metrics
-                        mean_batch_loss = np.mean(loss)
-                        mean_batch_Q = np.mean(Q_expected)
-                        print('Episode: {}/{},\tframe: {},\tbatch loss: {:.3e},\tmean batch Q: {:.3e},\ncurrent max(Q*): {:.3e},\tcurrent action: {},\tcurrent std(Q*)/mean(Q*): {:.3e}'.format(ep+1, max_episodes, frame+1, mean_batch_loss, mean_batch_Q, np.max(y), action, np.std(y)/np.mean(y)))
+#                        mean_batch_loss = np.mean(loss)
+                        mean_batch_Q = np.mean(y1)
+                        avg_reward = (1-reward_decay_factor)*reward_sum + reward_decay_factor*avg_reward
+                        print('Episode: {}/{},\tframe: {},\treward: {},\tmean batch Q: {:.3e},\ncurrent max(Q): {:.3e},\tcurrent action: {},\tcurrent std(Q)/mean(Q): {:.3e}'.format(ep+1, max_episodes, frame+1, int(reward_sum), mean_batch_Q, np.max(y), action_map[action], np.std(y)/np.mean(y)))
                         if (global_step % plot_every_n_steps == 0):
                             Q_val = sess.run(self.YQ, feed_dict={self.X:X_val})
                             avg_Q_max = np.mean(np.max(Q_val, axis=-1))
                             Q_val_list.append(avg_Q_max)
                             step_list.append(global_step)
-                            plt.figure('Average max Q*')
+                            avg_reward_list.append(avg_reward)
+                            plt.figure('Pong training metrics')
                             plt.clf()
-                            plt.plot(step_list, Q_val_list)
+                            plt.plot(step_list, Q_val_list, label='<max(Q)>')
+                            plt.plot(step_list, avg_reward_list, label='$\Sigma_k \gamma^k R_{t+k}/20$, $\gamma$=exp(-1/{:.3f})'.format(-1/np.log(reward_decay_factor)))
+                            plt.plot(step_list)
                             plt.xlabel('Global steps')
-                            plt.ylabel('<max(Q*)>')
-                            plt.title('Average maximum Q* on validation set')
-                            plt.savefig('Avg_max_Q.png', bbox_inches='tight')
+#                            plt.ylabel('<max(Q*)>')
+                            plt.title('Pong training metrics')
+                            plt.legend()
+                            plt.savefig('PongTrainingMetrics.png', bbox_inches='tight')
                         global_step += 1
+                    # Plot episode length
+                    episode_length_list.append(frame*(steps_to_skip+1))
+                    plt.figure('Episode length')
+                    plt.clf()
+                    plt.plot(episode_length_list)
+                    plt.xlabel('Episode')
+                    plt.ylabel('Number of frames/episode')
+                    plt.title('Pong episode length')
+                    plt.savefig('PongEpisodeLength.png', bbox_inches='tight')
                     # Save progress after episode ends
                     if nan_flag == True:
                         break
                     elif (ep % save_every_n_episodes == 0) and (ep != 0):
                         print('Saving checkpoint...')
                         saver.save(sess, save_path)
-    
+                # Save at the end of the training period
+                print('Training complete! Saving checkpoint...')
+                saver.save(sess, save_path)
+                
     def add_to_replay_memory(self, frame_list, action, reward, done, replay_memory, max_to_keep=700):
         ''' Adds most recent frames, rewards, and done flags to the replay memory list. '''
         experience = (np.concatenate(frame_list[-5:-1], axis=-1), np.concatenate(frame_list[-4:], axis=-1), action, reward, done)
@@ -800,19 +839,19 @@ cae.visualize_decoded_image(X_val)
 # First layer: (4,4,16,16) filter, (1,2,2,1) stride, same pad, (80,80,16) output
 # Second layer: (4,4,16,4) filter, (1,2,2,1) stride, same pad, (160,160,4) output
 
-#cae.train(X_train, lr0=1e-3, max_epochs=50, batch_size=64, reg_lambda=1e-2, X_val=X_val, reload_parameters=False, save_path='./Checkpoints/5/CAE_pretrain', plot_every_n_steps=25, save_every_n_epochs=10**10, max_early_stopping_epochs=10)
+#cae.train(X_train, lr0=1e-3, max_epochs=50, batch_size=64, reg_lambda=3e-1, X_val=X_val, reload_parameters=False, save_path='./Checkpoints/5/CAE_pretrain', plot_every_n_steps=50, save_every_n_epochs=10**10, max_early_stopping_epochs=15)
 
 #cae.visualize_decoded_image(X_val, save_str='./Checkpoints/5/CAE_pretrain')
 #cae.visualize_conv_filters(layer=1, save_str='./Checkpoints/5/CAE_pretrain')
 
 # Attach Q-network to the end of the autoencoder
-qnn = QNetwork(dense_spec=[(32, 0.3), (32, 0.3), 3], cae_path='./Checkpoints/5/CAE_pretrain', activation='relu', regularization=None)
+qnn = QNetwork(dense_spec=[(32, 0.3), (128, 0.3), 3], cae_path='./Checkpoints/5/CAE_pretrain', activation='relu', regularization=None)
 # First layer: 32 neurons, 0.3 dropout rate
 # Second layer: 32 neurons, 0.3 dropout rate
 # Output layer: 3 neurons (corresponding to the 3 available actions)
 
 # Fine-tune the Q-network
-qnn.train(lr=3e-4, gamma=np.exp(-1/100), max_episodes=100, batch_size=64, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.5, reload_parameters=True, save_path='./Checkpoints/5/QNN', plot_every_n_steps=50, save_every_n_episodes=1)
+qnn.train(lr=1e-5, gamma=np.exp(-1/20), max_episodes=100, batch_size=128, steps_to_skip=1, policy='epsilon-greedy', epsilon=0.25, reload_parameters=False, save_path='./Checkpoints/5/QNN', plot_every_n_steps=50, save_every_n_episodes=1)
 
 # Playtest
 #qnn_play(meta_path='./Q_checkpoints_2.meta', checkpoint_path='./Q_checkpoints_2', mode='softmax')

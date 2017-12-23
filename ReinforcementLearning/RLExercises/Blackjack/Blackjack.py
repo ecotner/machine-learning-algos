@@ -32,6 +32,7 @@ The states are indexed by 1) the dealer's card shown face-up 2) the player's cur
 
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 class Blackjack(object):
     '''
@@ -277,11 +278,15 @@ def MC_BJ(max_episodes, algo='epsilon-greedy'):
     # Initialize policy \pi, action value function Q, and lists of accumlated rewards
     pi = {} # Will assume default policy is to randomly choose hit/stay
     Q = {}
-    Rewards = {}
+    reward_count = {}
     # Repeat policy iteration loop until approx. convergence
+    tic = time.time()
     for episode in range(max_episodes):
-        if ((episode+1) % 500 == 0):
-            print('Episode {}/{}'.format(episode+1, max_episodes))
+        if (episode+1) % 1000 == 0:
+            toc = time.time()
+            print_update(episode+1, max_episodes, 1000, message='Games played: ', tic=tic, toc=toc)
+            tic = time.time()
+#            print('Games played {}/{}'.format(episode+1, max_episodes))
         # Pick starting state (use deal_hand_MCES for Exploring Starts)
 #        env.deal_hand()
         if algo == 'epsilon-greedy':
@@ -303,7 +308,7 @@ def MC_BJ(max_episodes, algo='epsilon-greedy'):
             s = (env.get_total_score('player'), env.score['dealer'], int(env.usable_ace['player']))
             # Choose action according to epsilon-greedy policy
             if algo == 'epsilon-greedy':
-                if np.random.rand() < epsilon*(1-(episode+1)/max_episodes):
+                if np.random.rand() < epsilon*(1-(episode+1)/max_episodes)**2:
                     a = np.random.choice(A)
                 else:
                     a = pi.get(s, 1)
@@ -341,13 +346,15 @@ def MC_BJ(max_episodes, algo='epsilon-greedy'):
         # Calculate reward for episode
         r = env.return_reward(is_bust, is_bust_dealer)
         # Calculate estimate of Q (by iterating over encountered states)
-        for s, a in encountered_states:
+        for key in encountered_states:
             # Extract cumulative return after each (s,a) (all the same in this case since only terminal state gives rewards)
             # Add return to list of accumulated rewards
-            Rewards[(s,a)] = Rewards.get((s,a), []) + [r]
+            if key not in reward_count:
+                reward_count[key] = 0
+            reward_count[key] += 1
 #            Rewards.get((s,a), []).append(r)
             # Calculate Q as average of accumulated rewards
-            Q[(s,a)] = np.mean(Rewards[(s,a)])
+            Q[key] = ((reward_count[key]-1)*Q.get(key,0) + r)/reward_count[key]
         # Calculate estimate of improved \pi(s) by taking argmax_a[Q(s,a)] (only need to update states encountered in episode though)
         for s, _ in encountered_states:
             pi[s] = np.argmax([Q.get((s,0), 100), Q.get((s,1), 100)]) # If haven't encountered a given Q(s,a) yet, give it an optimistic return so it tries it out next time
@@ -356,8 +363,8 @@ def MC_BJ(max_episodes, algo='epsilon-greedy'):
     # Count fraction of state/action pairs visited
     n_visits = 10
     total = {i:0 for i in range(n_visits+1)}
-    for key in Rewards:
-        n = len(Rewards[key])
+    for key in reward_count:
+        n = reward_count[key]
         for m in range(n,n_visits+1):
             total[m] += 1
     for n in range(n_visits+1):
@@ -420,11 +427,36 @@ def troubleshoot_after_hit(env, target='player'):
     if error_flag:
         print(env)
 
+def print_update(n, N, period, message='Progress: ', tic=None, toc=None):
+    ''' Periodically prints a progress update with a given period. Assumes the function is only being called once per period, and the program is being run in a UNIX terminal to move the cursor correctly. '''
+    progress = n/N
+    n_blocks = int(50*progress)
+    progress_str = '['
+    for block in range(n_blocks):
+        progress_str += '#'
+    for block in range(50-n_blocks):
+        progress_str += '-'
+    progress_str += ']'
+    print('\033[K{}{}/{}'.format(message,n,N), end='', flush=True)
+    if (tic is not None) and (toc is not None):
+        dt = toc - tic
+        rate = period/dt
+        time_left = int((N-n)/rate)
+        hours = time_left//3600
+        minutes = (time_left % 3600)//60
+        seconds = (time_left % 60)
+        print(', rate: {:.2e}/s, est. time left: {:02d}:{:02d}:{:02d}'.format(rate, hours, minutes, seconds), end='', flush=True)
+    print('\n\033[K'+progress_str+'\t{:.1f}% complete'.format(100*progress), end='')
+    if n != N:
+        print('\033[1A\r', end='')
+    else:
+        print('', end='\n')
+
 #env = Blackjack()
 #env.play_blackjack()
 
 max_episodes = int(float(input('Max episodes: ')))
-pi, Q = MC_BJ(max_episodes=max_episodes, algo='exploring-starts')
+pi, Q = MC_BJ(max_episodes=max_episodes, algo='epsilon-greedy')
 
 
 
