@@ -77,7 +77,7 @@ Another important metric is the length of each episode:
 
 ![episode length](./EpisodeLength.png)
 
-We can see that this steadily increases as well. Initially, the agent quickly loses each game, leading to short episodes. As its skill increases, the agent and opponent are able to "rally" by hitting the ball back and forth, prolonging the games/episodes. Once the agent becomes comparable to the opponent, the rate at which the number of steps per episode increases begins to slow, as the opponent can't keep hitting the ball back and forth forever without making a mistake. As the agent becomes even more skilled, it may be possible to even exploit weaknesses in the opponent's strategy to defeat it more quickly rather than simply acting to return the ball, although we have not seen this behavior yet.
+We can see that this steadily increases as well. Initially, the agent quickly loses each game, leading to short episodes. As its skill increases, the agent and opponent are able to "rally" by hitting the ball back and forth, prolonging the games/episodes. Once the agent becomes comparable to the opponent, the rate at which the number of steps per episode increases begins to slow, as the opponent can't keep hitting the ball back and forth forever without making a mistake. As the agent becomes even more skilled, it even is able to exploit weaknesses in the opponent's strategy to defeat it more quickly rather than simply acting to return the ball, as you can see from the decrease in episode time towards the end of training.
 
 Finally, we have a combined plot of a moving average of the reward gained by the agent (orange), and the maximum value of $Q$, averaged over a static held-out set of states (blue).
 
@@ -85,7 +85,7 @@ Finally, we have a combined plot of a moving average of the reward gained by the
 
 The held-out set of states are a set of 250 states (i.e. a batch of (250,80,80,4) preprocessed images) which are collected independently of the training process using a random policy. 10 episodes are played (leading to roughly 6000 states collected total), from which these 250 are uniformly sampled to assure low correlation, and are then saved to disk. As the agent is trained, the average maximum value of $Q$ on this set of states is indicative of the agent's "confidence" that it can score a point starting from these states, as larger values of Q mean that the agent expects larger future rewards from following the greedy policy. This metric has that advantage that it is not nearly as noisy as the raw episode score or length, so that it is easy to follow and track the progress of training. The downside is that the actual value is hard to interpret, as it depends on the magnitude/frequency of rewards, the value of $\gamma$, etc., and therefore has no meaning in absolute terms. Still, the relative, monotonic increase of this value ensures that training is progressing smoothly, even if the other metrics have large variance and are difficult to track.
 
-Finally, the ultimate result is watching the agent play the game itself:
+Finally, the ultimate result is watching the agent play the game itself (computer opponent is on the left, in orange, and the RL agent is on the right, in green):
 
 ![pong agent animation](./animation.gif)
 
