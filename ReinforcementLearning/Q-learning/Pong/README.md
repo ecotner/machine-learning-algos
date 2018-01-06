@@ -1,10 +1,10 @@
-#Deep Q Learning with Pong
+# Deep Q Learning with Pong
 
-##Introduction
+## Introduction
 
 This project is an attempt to replicate some of the results of the [Google DeepMind paper by Mnih et. al.](https://arxiv.org/abs/1312.5602) wherein the authors train a Deep Q-Network (DQN) to play a variety of classic Atari video games, such as Seaquest, Breakout, Q*bert, Space Invaders, Pong, etc. Specifically, this project is an attempt to replicate the "Pong" part of the experiment, by training a convolutional neural network (CNN) on raw pixel data (i.e. what a human would see when playing the game). We find that although the computational and temporal resources necessary to train even a simple network adequately are quite large, it can be done, and we have successfully trained an agent that is capable of playing Pong at an adequate level, and is capable of defeating the built-in "AI" roughly 1/3 of the time during training.
 
-##Theory
+## Theory
 
 The DQN is based on the Q-learning algorithm by [Watkins (1989)](http://www.cs.rhul.ac.uk/~chrisw/new_thesis.pdf). In it, we have an a action-value function q(s,a), which is defined as the expectation of (possibly discounted) future rewards in a Markov decision process (MDP) starting from state s and action a and following the policy $\pi$:
 
@@ -22,7 +22,7 @@ However, since we don't have infinite time, nor the resources to enumerate every
 
 with respect to $\theta$ (while holding the weights from the previous iteration, $\theta^\prime$, fixed). One can then initialize the network with some randomly-chosen weights, feed in the states $S_i$ to the network to get $Q(S_i,a;\theta)$, get the action from the behavioral policy $A_i = \mu(S_i)$, observe the next state $S_{i+1}$ and associated reward $R_{i+1}$. We then plug this back in the network to get $Q(S_{i+1},a^\prime,\theta^\prime)$, which we can use to evaluate the target $y$, and then calculate $\nabla_\theta L$, which you can use to update your weights using your favorite optimizer (SGD, RMSprop, Adam, etc.) to minimize $L$. As the network output approaches the target (policy evaluation), the policy itself changes since it is based on the output $Q$ (policy iteration), so that the agent continually improves (the standard recipe for generalized policy iteration).
 
-##Experiment
+## Experiment
 
 Here we describe the experiment itself. We will outline the network architecture, the "replay memory", hyperparameter choices (and specifics of the implementation), and the results.
 
@@ -87,7 +87,7 @@ The held-out set of states are a set of 250 states (i.e. a batch of (250,80,80,4
 
 Finally, the ultimate result is watching the agent play the game, which you can watch [here](./animation.gif). You can see that the majority of the agent's points come from taking advantage of the way the ball is served up after the opponent has lost a point to the agent, which it uses to consistently chain points. However, it seems that the agent's skill in other areas is considerably lower, as it can't effectively return shots placed in the upper part of the screen (though it comes close sometimes). I believe the propensity of near-misses might come from the fact that the agent can't localize the ball in relation to the paddle effectively due to downsizing and max pooling in the intermediate layers, which introduces some uncertainty in the position.
 
-##Discussion and conclusion
+## Discussion and conclusion
 
 There are numerous improvements which could be used to iterate on this experiment. In the future, it might be more efficient to put the replay memory entirely on the GPU so that there is no time wasted sending minibatches from the CPU to GPU, which can act as a bottleneck. This was likely happening to me, as my GPU utilization never got higher than about 10% during training. New frames could be gathered on the CPU and then sent in batches of 1000 or so to the GPU where they would replace old experiences in the replay memory. Then the only information necessary to send from CPU to GPU to do training is the indices of the experience in replay memory, which is computationally trivial. Putting states through  the network in order to determine the behavioral policy will still require sending arrays to the GPU, but these are much smaller than the batches of 128 we use for training.
 
