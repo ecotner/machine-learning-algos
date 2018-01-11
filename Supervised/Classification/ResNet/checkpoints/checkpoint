@@ -1,0 +1,2 @@
+model_checkpoint_path: "CIFAR10_0"
+all_model_checkpoint_paths: "CIFAR10_0"
