@@ -185,17 +185,6 @@ with G.as_default():
                 
                 # Iterate global step
                 global_steps += 1
-            
-#            # Save progress at end of epoch (if validation accuracy has improved)
-#            slice_lower = m_train
-#            slice_upper = m_train + VAL_BATCH_SIZE
-#            feed_dict = {**{train_idx:range(slice_lower, slice_upper), regularization_parameter:REGULARIZATION_PARAMETER, input_noise_magnitude:INPUT_NOISE_MAGNITUDE}, **{keep_prob[n]:VAL_KEEP_PROB[n] for n in range(1,len(KEEP_PROB)+1)}}
-#            val_loss, val_accuracy = sess.run([J, acc], feed_dict=feed_dict)
-#            print('Validation loss: {}, validation accuracy: {}'.format(val_loss, val_accuracy))
-#            with open(SAVE_PATH+'_val_accuracy.log', 'a') as fo:
-#                fo.write(str(val_accuracy)+'\n')
-#            with open(SAVE_PATH+'_val_loss.log', 'a') as fo:
-#                fo.write(str(val_loss)+'\n')
         
         # Print stuff once done
         print('Done!')
