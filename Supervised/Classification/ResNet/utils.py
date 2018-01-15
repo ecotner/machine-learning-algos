@@ -131,7 +131,7 @@ def plot_metrics(data_path, plot_path=None):
     plt.savefig(plot_path+'_error.png')
 
 if __name__ == '__main__':
-    plot_metrics('./checkpoints/7/CIFAR10_7')
+    plot_metrics('./checkpoints/{0}/CIFAR10_{0}'.format(8))
 
 
 
