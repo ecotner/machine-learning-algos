@@ -2,7 +2,19 @@
 """
 Created on Sun Jan  7 19:53:13 2018
 
-Constructs a ResNet computational graph
+Constructs a Residual network [1] made from Inception blocks [2]. Supports dropout [3], batch normalization [4] , and weight decay for regularization. Is able to create dense, covolutional, and max pool layers individually if Inception blocks aren't your thing.
+
+Implementation details:
+    - Batch normalization is applied AFTER affine transformations, and BEFORE nonlinearities (ie g(BN(W.X+b)), not BN(g(W.X+b)) or g(W.BN(X)+b))
+    - All placeholders are saved in a collection called "placeholders"
+    - All weights (except batch norm parameters) are saved in a collection called "weights"
+    - All biases are saved in a collection called "biases"
+
+References:
+    [2] Inception paper
+    [1] ResNet paper
+    [3] Dropout paper
+    [4] Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift (https://arxiv.org/abs/1502.03167)
 
 @author: Eric Cotner
 """
@@ -25,6 +37,7 @@ class ResNet(object):
         dtype: dtype of the input tensor (use TensorFlow types)
         shape: shape of the input tensor
         name: an optional name for the input (default is 'X')
+        use_bn: boolean, whether to use batch normalization or not
     
     Attributes:
         G: the computational graph
@@ -49,7 +62,7 @@ class ResNet(object):
         define_training_op: defines the optimization method and training operation
     '''
     
-    def __init__(self, dtype, shape, save_path, name='input'):
+    def __init__(self, dtype, shape, save_path, name='input', use_bn=True):
         ''' Initialize the graph with a single input layer. '''
         self.G = tf.Graph()
         with self.G.as_default():
@@ -66,6 +79,9 @@ class ResNet(object):
             self.skip_start = None
             self.layer_num = 1
             self.save_path = save_path
+            self.is_training = tf.placeholder_with_default(True, shape=[], name='is_training')
+            tf.add_to_collection('placeholders', self.is_training)
+            self.use_bn = use_bn
         with open(save_path+'_architecture.log', 'w+') as fo:
             fo.write('Inception ResNet:\nLayer 0 (input): shape={}\n'.format(shape))
     
@@ -88,7 +104,7 @@ class ResNet(object):
                 return tf.nn.relu(A, name=name)
             elif activation.lower() == 'softmax':
                 return tf.nn.softmax(A, name=name)
-            elif activation.lower() == 'none':
+            elif (activation.lower() == 'none') or (activation is None):
                 return tf.identity(A, name=name)
             elif activation.lower() == 'sigmoid':
                 return tf.nn.sigmoid(A, name=name)
@@ -96,6 +112,11 @@ class ResNet(object):
                 return tf.nn.tanh(A, name=name)
             else:
                 raise Exception('unknown activation function')
+    
+    def batch_norm(self, tensor):
+        ''' Applies batch normalization to a tensor. Returns the transformed tensor. '''
+        return tf.layers.batch_normalization(tensor, training=self.is_training)
+        
     
     def add_conv_layer(self, f, n_c, s, padding='SAME', activation='relu', use_cudnn_on_gpu=None, data_format=None, name='conv'):
         '''
@@ -111,13 +132,19 @@ class ResNet(object):
             name: an optional name for the convolutional layer (the layer index will be appended to this)
         '''
         with self.G.as_default():
+            # Set up filters
             n_in = self.output.shape.as_list()[-1]
             W = tf.Variable(initial_value=tf.random_normal(shape=[f,f,n_in,n_c], dtype=tf.float32)*tf.sqrt(2/(f*f*n_in + n_c)), dtype=tf.float32, name='W_'+name+'_{0}x{0}_{1}'.format(f, self.layer_num))
             tf.add_to_collection('weights', W)
-            b = tf.Variable(initial_value=tf.zeros(shape=[n_c]), dtype=tf.float32, name='b_'+name+'_{0}x{0}_{1}'.format(f, self.layer_num))
-            tf.add_to_collection('biases', b)
-            A = tf.nn.conv2d(self.output, W, [1,s,s,1], padding, use_cudnn_on_gpu=None, data_format=None) + b
+            # Apply convolution operation (and batch norm)
+            if self.use_bn:
+                A = self.batch_norm(tf.nn.conv2d(self.output, W, [1,s,s,1], padding, use_cudnn_on_gpu=None, data_format=None))
+            else:
+                b = tf.Variable(initial_value=tf.zeros(shape=[n_c]), dtype=tf.float32, name='b_'+name+'_{0}x{0}_{1}'.format(f, self.layer_num))
+                tf.add_to_collection('biases', b)
+                A = tf.nn.conv2d(self.output, W, [1,s,s,1], padding, use_cudnn_on_gpu=None, data_format=None) + b
             name = name+'_{0}x{0}_{1}'.format(f, self.layer_num)
+            # Apply activation
             self.output = self.activation(A, activation, name)
             self.layer_num += 1
         with open(self.save_path+'_architecture.log', 'a') as fo:
@@ -132,13 +159,19 @@ class ResNet(object):
             name: an optional name for the layer (the layer index will be appended to this)
         '''
         with self.G.as_default():
+            # Set up weights and biases
             n_in = self.output.shape.as_list()[-1]
             W = tf.Variable(initial_value=tf.random_normal(shape=[n_in,width], dtype=tf.float32)*tf.sqrt(2/(n_in + width)), name='W_'+name+str(self.layer_num))
             tf.add_to_collection('weights', W)
-            b = tf.Variable(initial_value=tf.zeros(shape=[width]), dtype=tf.float32, name='b_'+name+str(self.layer_num))
-            tf.add_to_collection('biases', b)
-            A = tf.matmul(self.output, W) + b
+            # Apply matrix multiplication (and batch norm)
+            if self.use_bn:
+                A = self.batch_norm(tf.matmul(self.output, W))
+            else:
+                b = tf.Variable(initial_value=tf.zeros(shape=[width]), dtype=tf.float32, name='b_'+name+str(self.layer_num))
+                tf.add_to_collection('biases', b)
+                A = tf.matmul(self.output, W) + b
             name = name+'_'+str(self.layer_num)
+            # Apply activation
             self.output = self.activation(A, activation, name)
             self.layer_num += 1
         with open(self.save_path+'_architecture.log', 'a') as fo:
@@ -153,11 +186,13 @@ class ResNet(object):
             name: an optional name for the layer (the layer index will be appended to this)
         '''
         with self.G.as_default():
+            # Set up weights and biases
             n_in = self.output.shape.as_list()[-1]
             W = tf.Variable(initial_value=tf.random_normal(shape=[n_in,width], dtype=tf.float32)*tf.sqrt(2/(n_in + width)), name='W_'+name+str(self.layer_num))
             tf.add_to_collection('weights', W)
             b = tf.Variable(initial_value=tf.zeros(shape=[width]), dtype=tf.float32, name='b_'+name+str(self.layer_num))
             tf.add_to_collection('biases', b)
+            # Apply matrix multiplication and activation function (no batch norm on output)
             A = tf.matmul(self.output, W) + b
             self.output = self.activation(A, activation, name)
             self.layer_num += 1
@@ -189,12 +224,16 @@ class ResNet(object):
     def dropout(self, group=1, scaling=True):
         ''' Applies dropout to the previous layer. Supports several dropout "groups" which share the same keep_prob parameter. '''
         with self.G.as_default():
+            # Take care of keep_prob placeholder
             if group not in self.keep_prob:
                 self.keep_prob[group] = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob_'+str(group))
                 tf.add_to_collection('placeholders', self.keep_prob[group])
+            # Apply actual dropout operation
             self.output = tf.nn.dropout(self.output, self.keep_prob[group])
+            # Optionally get rid of the scaling by 1/keep_prob (not recommended)
             if not scaling:
                 self.output *= self.keep_prob[group]
+        # Add to architecture log
         with open(self.save_path+'_architecture.log', 'a') as fo:
             fo.write('Dropout, group {}\n'.format(group))
 
@@ -211,69 +250,82 @@ class ResNet(object):
             shield_channels: number of 1x1 convolutions to do before larger fxf convolutions to reduce the number of input channels and save computation. Options are True (automatically chooses a number of filters), False (doesn't perform any 1x1 convolutions), and a arbitrary positive integer number
             name: an optional name for the inception block
         '''
+        # Sanitize inputs
         assert all([(f>0) for f in conv_filter_sizes]), 'some conv_filter_sizes are negative'
         assert (shield_channels == True) or (shield_channels == False) or (shield_channels > 0)
         with open(self.save_path+'_architecture.log', 'a') as fo:
             fo.write('=============== Start Inception block {} ===============\n'.format(self.layer_num))
         with self.G.as_default():
             outputs = []
+            # Save the input tensor for later use and get the number of input channels
             prev_tensor = self.output
             n_in = prev_tensor.shape.as_list()[-1]
+            # Add all specified convolution layers
             for (f, n_c) in zip(conv_filter_sizes, num_conv_filters):
                 if (f != 1):
+                    # Add 1x1 "shield channel" convolutions for reducing calculational load
                     if shield_channels == True:
                         n_s = min(n_c, (f**2)*n_in)//2
-                        self.add_conv_layer(1, n_s, 1, activation='relu', name=name+'_shield_conv')
+                        self.add_conv_layer(1, n_s, 1, activation=activation, name=name+'_shield_conv')
                         self.layer_num += -1
                     elif shield_channels == False:
                         pass
                     else:
-                        self.add_conv_layer(1, shield_channels, 1, activation='relu', name=name+'_shield_conv')
+                        self.add_conv_layer(1, shield_channels, 1, activation=activation, name=name+'_shield_conv')
                         self.layer_num += 1
-                    self.add_conv_layer(f, n_c, stride, activation='relu', name=name+'_conv')
-                    self.layer_num += -1
-                else:
-                    self.add_conv_layer(f, n_c, stride, activation='relu', name=name+'_conv')
-                    self.layer_num +=-1
+                # Add larger covolutional layers
+                self.add_conv_layer(f, n_c, stride, activation=activation, name=name+'_conv')
+                self.layer_num += -1
+#                else:
+#                    self.add_conv_layer(f, n_c, stride, activation='relu', name=name+'_conv')
+#                    self.layer_num +=-1
+                # Append outputs to list for concatentation
                 outputs.append(self.output)
                 self.output = prev_tensor
                 with open(self.save_path+'_architecture.log', 'a') as fo:
                     prev_line_pos = fo.tell()
                     fo.write('------------------------------------------------------\n')
+            # Add specified max pool layers
             for (f, n_c) in zip(max_pool_filter_sizes, num_max_pool_filters):
                 self.add_max_pool_layer(f, stride, name=name+'_max_pool', activation='none')
                 self.layer_num += -1
-                self.add_conv_layer(1, n_c, 1, activation='relu')
+                self.add_conv_layer(1, n_c, 1, activation=activation)
                 self.layer_num += -1
                 outputs.append(self.output)
                 self.output = prev_tensor
                 with open(self.save_path+'_architecture.log', 'a') as fo:
                     prev_line_pos = fo.tell()
                     fo.write('-------------------------------------------------------\n')
-            A = tf.concat(outputs, axis=-1)/(len(conv_filter_sizes) + len(max_pool_filter_sizes))
+            # Concatenate all the layers in the inception block
             name = name+'_block_'+str(self.layer_num)
-            self.output = self.activation(A, activation, name)
+            self.output = tf.concat(outputs, axis=-1, name=name)/(len(conv_filter_sizes) + len(max_pool_filter_sizes))
             self.layer_num += 1
         with open(self.save_path+'_architecture.log', 'r+') as fo:
             fo.seek(prev_line_pos)
             fo.write('**************** End Inception block {} ****************\n'.format(self.layer_num-1))
     
     def start_skip_connection(self):
+        ''' Creates a link to the previous layer for connecting to later. '''
         assert self.skip_start is None, 'already have root tensor of skip connection'
         with self.G.as_default():
             self.skip_start = self.output
+        # Add to architecture log
         with open(self.save_path+'_architecture.log', 'a') as fo:
             fo.write('>>> Start skip connection\n')
     
     def end_skip_connection(self, activation='relu', name='residual'):
+        ''' Ends previously initialized skip connection. '''
         assert self.skip_start is not None, 'haven\'t specified root tensor of skip connection'
         with self.G.as_default():
+            # Add output of previous layer to the identity of the skip connnection
             self.output = self.activation(self.output + self.skip_start, activation=activation, name=name+str(self.layer_num))
             self.skip_start = None
+        # Add to architecture log
         with open(self.save_path+'_architecture.log', 'a') as fo:
             fo.write('<<< End skip connection\n')
     
-    def add_loss_function(self, loss_type='xentropy', regularization='L2'):
+    def add_loss_function(self, loss_type='xentropy', regularization=None):
+        ''' Adds a loss function and weight regularization to the graph. Choices for loss are "xentropy" and "mean_square_error", and choices for loss are "L1", "L2", and None. '''
         with self.G.as_default():
             # Calculate training loss
             self.labels = tf.placeholder(dtype=tf.int32, shape=[None], name='labels')
@@ -289,34 +341,51 @@ class ResNet(object):
             tf.add_to_collection('placeholders', self.regularization_parameter)
             weights = tf.get_collection('weights')
             J_reg = tf.constant(0, dtype=tf.float32)
-            if regularization == 'L2':
-                n_var = 0
-                for W in weights:
-                    n_var += np.prod(W.shape.as_list())
+            n_w = 0
+            for W in weights:
+                n_w += np.prod(W.shape.as_list())
+                if regularization == 'L2':
                     J_reg += tf.reduce_sum(tf.square(W))
-                self.loss += self.regularization_parameter*(J_reg/n_var)
-            elif regularization == 'L1':
-                n_var = 0
-                for W in weights:
-                    n_var += np.prod(W.shape.as_list())
+                elif regularization == 'L1':
                     J_reg += tf.reduce_sum(tf.abs(W))
-                self.loss += self.regularization_parameter*(J_reg/n_var)
-            elif regularization is None:
-                n_var = 0
-                for W in weights:
-                    n_var += np.prod(W.shape.as_list())
+                elif regularization is None:
+                    pass
+                else:
+                    raise Exception('unknown regularization type')
+            self.loss += self.regularization_parameter*(J_reg/n_w)
+            biases = tf.get_collection('biases')
+            n_b = 0
+            for b in biases:
+                n_b += np.prod(b.shape.as_list())
+#            if regularization == 'L2':
+#                for W in weights:
+#                    n_w += np.prod(W.shape.as_list())
+#                    J_reg += tf.reduce_sum(tf.square(W))
+#                self.loss += self.regularization_parameter*(J_reg/n_var)
+#            elif regularization == 'L1':
+#                for W in weights:
+#                    n_w += np.prod(W.shape.as_list())
+#                    J_reg += tf.reduce_sum(tf.abs(W))
+#                self.loss += self.regularization_parameter*(J_reg/n_var)
+#            elif regularization is None:
+#                for W in weights:
+#                    n_w += np.prod(W.shape.as_list())
+        # Update architecture log
         with open(self.save_path+'_architecture.log', 'a+') as fo:
             fo.write('\nLoss function: {}, regularization: {}\n'.format(loss_type, regularization))
             fo.seek(0)
             contents = fo.readlines()
         with open(self.save_path+'_architecture.log', 'w') as fo:
-            contents.insert(1,'Number of parameters: {}\n\nNetwork architecture:\n\n'.format(n_var))
+            contents.insert(1,'Number of parameters: {} weights + {} biases = {} parameters\n\nNetwork architecture:\n\n'.format(n_w, n_b, n_w+n_b))
             fo.write(''.join(contents))
     
     def define_training_op(self, optimizer):
+        ''' Define the training operation. Input a string (from "adam", "sgd" or "rms") to specify the optimizer. Uses the vanilla, default parameters for each optimizer. '''
         with self.G.as_default():
+            # Set learning rate placeholder
             self.learning_rate = tf.placeholder(dtype=tf.float32, shape=[], name='learning_rate')
             tf.add_to_collection('placeholders', self.learning_rate)
+            # Choose optimizer
             if optimizer.lower() == 'adam':
                 opt = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
             elif optimizer.lower() == 'sgd':
@@ -325,11 +394,18 @@ class ResNet(object):
                 opt = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
             else:
                 raise Exception('unknown optimizer')
-            self.training_op = opt.minimize(self.loss, name='training_op')
+            
+            # Makes sure the batch norm parameters are updated with the training step
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(update_ops):
+                # Create the training operation
+                self.training_op = opt.minimize(self.loss, name='training_op')
+        # Log the optimizer in the architecture
         with open(self.save_path+'_architecture.log', 'a+') as fo:
             fo.write('Optimizer: '+optimizer.upper())
     
     def save_graph(self):
+        ''' Initializes all the variables and saves the graph as a meta and a checkpoint. '''
         with self.G.as_default():
             saver = tf.train.Saver(var_list=None)
             with tf.Session() as sess:
@@ -337,7 +413,7 @@ class ResNet(object):
                 saver.save(sess, self.save_path)
 
 
-a = ResNet(tf.float32, shape=[None,32,32,3], save_path='./checkpoints/7/CIFAR10_7') # 32x32x3
+a = ResNet(tf.float32, shape=[None,32,32,3], save_path='./checkpoints/{0}/CIFAR10_{0}'.format(8), use_bn=True) # 32x32x3
 a.dropout(group=1)
 a.add_inception_block([1,3,5], [32,48,16], 1, shield_channels=False) # 32x32x96
 a.dropout(group=2)
