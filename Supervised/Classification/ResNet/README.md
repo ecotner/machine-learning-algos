@@ -16,12 +16,13 @@ This is still a work in progress.
 - Add weights and biases to variable collections for ease of applying regularization after constructing graph
 - Add L1 and L2 regularization to training network
 - Add in automatic noise injection to inputs
-- Add in automatic dataset augmentation (random crops, flips, etc)
-- Add dropout to network
+- Add in automatic dataset augmentation (random crops)
+- Add in generation of human-readable achitecture description
+- Add dropout capability
+- Add in batch normalization
 
 ## To Do:
 
-- Add in batch normalization
 - Add in automatic noise injection to weights
 - Write script to run prediction on pictures using trained network
 - Figure out how to do neural style transfer on the trained network
