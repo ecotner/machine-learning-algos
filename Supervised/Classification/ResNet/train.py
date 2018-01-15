@@ -21,7 +21,7 @@ REGULARIZATION_PARAMETER = 3e-1
 INPUT_NOISE_MAGNITUDE = np.sqrt(0.10)
 KEEP_PROB = {1: 1, 2: 0.6, 3: 0.7}
 VAL_KEEP_PROB = {1:1, 2:1, 3: 1}
-SAVE_PATH = './checkpoints/7/CIFAR10_7'
+SAVE_PATH = './checkpoints/{0}/CIFAR10_{0}'.format(8)
 MAX_EPOCHS = int(1e10)
 CIFAR_DATA_PATH = './CIFAR10_data/cifar-10-batches-py/'
 LOG_EVERY_N_STEPS = 100
@@ -55,10 +55,6 @@ np.random.seed(0)
 X_train = np.random.permutation(X)
 np.random.seed(0)
 Y_train = np.random.permutation(Y)
-#X_val = X[:VAL_BATCH_SIZE,:,:,:]
-#Y_val = Y[:VAL_BATCH_SIZE]
-#X_train = X[VAL_BATCH_SIZE:,:,:,:]
-#Y_train = Y[VAL_BATCH_SIZE:]
 del X, Y
 m_train = len(Y_train) - VAL_BATCH_SIZE
 m_test = len(Y_test)
@@ -161,7 +157,7 @@ with G.as_default():
                     print('Detected numerical instability in training, exiting')
                     exit()
                 
-                # Compute metrics and add to logs
+                # Compute metrics, add to logs
                 if global_steps % LOG_EVERY_N_STEPS == 0:
                     slice_lower = m_train
                     slice_upper = m_train + VAL_BATCH_SIZE
@@ -179,25 +175,27 @@ with G.as_default():
                     with open(SAVE_PATH+'_learning_rate.log', 'a') as fo:
                         fo.write(str(lr)+'\n')
                     
+                    # Save if improvement
+                    if val_accuracy > max_val_accuracy:
+                        min_val_accuracy = val_accuracy
+                        print('Saving variables...')
+                        saver.save(sess, SAVE_PATH, write_meta_graph=False)
+                    
                 print('Epoch: {}, batch: {}/{}, loss: {:.2e}, accuracy: {:.3f}, learning_rate: {:.2e}'.format(epoch, b, m_train//BATCH_SIZE, train_loss, train_accuracy, lr))
                 
                 # Iterate global step
                 global_steps += 1
             
-            # Save progress at end of epoch (if validation accuracy has improved)
-            slice_lower = m_train
-            slice_upper = m_train + VAL_BATCH_SIZE
-            feed_dict = {**{train_idx:range(slice_lower, slice_upper), regularization_parameter:REGULARIZATION_PARAMETER, input_noise_magnitude:INPUT_NOISE_MAGNITUDE}, **{keep_prob[n]:VAL_KEEP_PROB[n] for n in range(1,len(KEEP_PROB)+1)}}
-            val_loss, val_accuracy = sess.run([J, acc], feed_dict=feed_dict)
-            print('Validation loss: {}, validation accuracy: {}'.format(val_loss, val_accuracy))
-            if val_accuracy > max_val_accuracy:
-                min_val_accuracy = val_accuracy
-                print('Saving variables...')
-                saver.save(sess, SAVE_PATH, write_meta_graph=False)
-            with open(SAVE_PATH+'_val_accuracy.log', 'a') as fo:
-                fo.write(str(val_accuracy)+'\n')
-            with open(SAVE_PATH+'_val_loss.log', 'a') as fo:
-                fo.write(str(val_loss)+'\n')
+#            # Save progress at end of epoch (if validation accuracy has improved)
+#            slice_lower = m_train
+#            slice_upper = m_train + VAL_BATCH_SIZE
+#            feed_dict = {**{train_idx:range(slice_lower, slice_upper), regularization_parameter:REGULARIZATION_PARAMETER, input_noise_magnitude:INPUT_NOISE_MAGNITUDE}, **{keep_prob[n]:VAL_KEEP_PROB[n] for n in range(1,len(KEEP_PROB)+1)}}
+#            val_loss, val_accuracy = sess.run([J, acc], feed_dict=feed_dict)
+#            print('Validation loss: {}, validation accuracy: {}'.format(val_loss, val_accuracy))
+#            with open(SAVE_PATH+'_val_accuracy.log', 'a') as fo:
+#                fo.write(str(val_accuracy)+'\n')
+#            with open(SAVE_PATH+'_val_loss.log', 'a') as fo:
+#                fo.write(str(val_loss)+'\n')
         
         # Print stuff once done
         print('Done!')
