@@ -26,6 +26,17 @@ def one_hot(idx, depth):
         M[i,j] = 1
     return M
 
+def input_choice(query_str, choices=['y','n','']):
+    ''' Streamlines asking a question from the user by automatically rejecting an answer if it isn't one of the offered choices. Default options are "y", "n", and "". '''
+    done = False
+    while not done:
+        x = input(query_str)
+        if x in choices:
+            done = True
+        else:
+            print('Invalid choice!\n')
+    return x
+
 def random_crop(tensor, size):
     '''
     Does a random crop on a batch of images, assuming NHWC format.
@@ -50,7 +61,6 @@ def plot_metrics(data_path, plot_path=None):
     # Import necessary modules
     import matplotlib
     matplotlib.use('Agg')
-#    import matplotlib.ticker as ticker
     import matplotlib.pyplot as plt
     plt.ioff()
     import numpy as np
@@ -131,12 +141,4 @@ def plot_metrics(data_path, plot_path=None):
     plt.savefig(plot_path+'_error.png')
 
 if __name__ == '__main__':
-    plot_metrics('./checkpoints/{0}/CIFAR10_{0}'.format(8))
-
-
-
-
-
-
-
-
+    plot_metrics('./checkpoints/{0}/CIFAR10_{0}'.format(10))
