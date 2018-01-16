@@ -44,26 +44,43 @@ class ResNet(object):
         input: the input tensor
         output: the (most recent) output tensor
         labels: the target labels for classification
+        loss: the batch loss tensor
+        learning_rate: placeholder for the learning rate
+        regularization_parameter: placeholder for weight decay strength parameter
+        keep_prob: dictionary of probabilities to keep neurons for each of the dropout groups
+        training_op: TF operation which performs the training step
         skip_start = keeps track of the node at which the skip connection starts
         layer_num: the layer index of the (most_recent) output tensor (layer indexing starts at 1, and skip connections and flattening operations don't count towards it)
+        save_path: the directory in which to save the graph .meta and .log
+        is_training: placeholder for batch norm to apply correct calculation of mean and variance at train/test time
+        use_bn: boolean to represent whether batch norm is applied or not (default to True)
+        weight_noise: placeholder for magnitude of additive noise applied to the network weights; defaults to zero
     
     Methods:
         get_graph: returns the computational graph ResNet.G
         get_tensor: returns tensor from the computational graph by name
         reset_graph: resets the graph to a blank state
         activation: applies an activation function
+        batch_norm: applies batch norm to a tensor
         add_conv_layer: adds a convolutional layer to the most recent output
+        add_output_layer: like add_dense_layer, but does not have batch norm or weight noise
         add_dense_layer: adds a dense/fully-connected layer to the most recent output
         add_max_pool_layer: adds a max pooling layer to the most recent output
         flatten_layer flattens the most recent output to a form appropriate for attaching dense layers
+        dropout: applies dropout to the previous tensor
         add_inception_block: adds an inception block composed of multiple convolutional filters
         start_skip_connection: marks the root node of a skip connection
         end_skip_connection: adds the most recent output layer to the layer marked by the start_skip_connection method
+        add_loss_function: calculates batch loss tensor, and applies weight decay regularization
         define_training_op: defines the optimization method and training operation
+        save_graph: saves the constructed graph for later use
     '''
     
     def __init__(self, dtype, shape, save_path, name='input', use_bn=True):
         ''' Initialize the graph with a single input layer. '''
+        import tensorflow as tf
+        import numpy as np
+
         self.G = tf.Graph()
         with self.G.as_default():
             self.input = tf.placeholder(dtype, shape, name)
@@ -73,7 +90,7 @@ class ResNet(object):
             self.loss = None
             self.learning_rate = None
             self.regularization_parameter = None
-            self.keep_prob = {1:tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob_1')}
+            self.keep_prob = {1:tf.placeholder_with_default(np.array([1.0], dtype=np.float32)[0], shape=[], name='keep_prob_1')}
             tf.add_to_collection('placeholders', self.keep_prob[1])
             self.training_op = None
             self.skip_start = None
@@ -82,6 +99,8 @@ class ResNet(object):
             self.is_training = tf.placeholder_with_default(True, shape=[], name='is_training')
             tf.add_to_collection('placeholders', self.is_training)
             self.use_bn = use_bn
+            self.weight_noise = tf.placeholder_with_default(np.array([1.0], dtype=np.float32)[0], shape=[], name='weight_noise')
+            tf.add_to_collection('placeholders', self.weight_noise)
         with open(save_path+'_architecture.log', 'w+') as fo:
             fo.write('Inception ResNet:\nLayer 0 (input): shape={}\n'.format(shape))
     
@@ -134,8 +153,9 @@ class ResNet(object):
         with self.G.as_default():
             # Set up filters
             n_in = self.output.shape.as_list()[-1]
-            W = tf.Variable(initial_value=tf.random_normal(shape=[f,f,n_in,n_c], dtype=tf.float32)*tf.sqrt(2/(f*f*n_in + n_c)), dtype=tf.float32, name='W_'+name+'_{0}x{0}_{1}'.format(f, self.layer_num))
+            W = tf.Variable(initial_value=tf.random_normal(shape=[f,f,n_in,n_c], dtype=tf.float32)*tf.sqrt(2/(f*f*n_in + n_c)), dtype=tf.float32, name='W_'+name+'_{0}x{0}_{1}'.format(f, self.layer_num)) 
             tf.add_to_collection('weights', W)
+            W += self.weight_noise*tf.random_normal(shape=[f,f,n_in,n_c], dtype=tf.float32)
             # Apply convolution operation (and batch norm)
             if self.use_bn:
                 A = self.batch_norm(tf.nn.conv2d(self.output, W, [1,s,s,1], padding, use_cudnn_on_gpu=None, data_format=None))
@@ -163,6 +183,7 @@ class ResNet(object):
             n_in = self.output.shape.as_list()[-1]
             W = tf.Variable(initial_value=tf.random_normal(shape=[n_in,width], dtype=tf.float32)*tf.sqrt(2/(n_in + width)), name='W_'+name+str(self.layer_num))
             tf.add_to_collection('weights', W)
+            W += self.weight_noise*tf.random_normal(shape=[n_in,width], dtype=tf.float32)
             # Apply matrix multiplication (and batch norm)
             if self.use_bn:
                 A = self.batch_norm(tf.matmul(self.output, W))
@@ -226,7 +247,7 @@ class ResNet(object):
         with self.G.as_default():
             # Take care of keep_prob placeholder
             if group not in self.keep_prob:
-                self.keep_prob[group] = tf.placeholder(dtype=tf.float32, shape=[], name='keep_prob_'+str(group))
+                self.keep_prob[group] = tf.placeholder_with_default(np.array([1.0], dtype=np.float32)[0], shape=[], name='keep_prob_'+str(group))
                 tf.add_to_collection('placeholders', self.keep_prob[group])
             # Apply actual dropout operation
             self.output = tf.nn.dropout(self.output, self.keep_prob[group])
@@ -276,9 +297,6 @@ class ResNet(object):
                 # Add larger covolutional layers
                 self.add_conv_layer(f, n_c, stride, activation=activation, name=name+'_conv')
                 self.layer_num += -1
-#                else:
-#                    self.add_conv_layer(f, n_c, stride, activation='relu', name=name+'_conv')
-#                    self.layer_num +=-1
                 # Append outputs to list for concatentation
                 outputs.append(self.output)
                 self.output = prev_tensor
@@ -324,20 +342,21 @@ class ResNet(object):
         with open(self.save_path+'_architecture.log', 'a') as fo:
             fo.write('<<< End skip connection\n')
     
-    def add_loss_function(self, loss_type='xentropy', regularization=None):
+    def add_loss_function(self, loss_type='xentropy', shape=[None], regularization=None):
         ''' Adds a loss function and weight regularization to the graph. Choices for loss are "xentropy" and "mean_square_error", and choices for loss are "L1", "L2", and None. '''
         with self.G.as_default():
             # Calculate training loss
-            self.labels = tf.placeholder(dtype=tf.int32, shape=[None], name='labels')
-            tf.add_to_collection('placeholders', self.labels)
             if loss_type == 'xentropy':
+                self.labels = tf.placeholder(dtype=tf.int32, shape=shape, name='labels')
                 self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=self.output, labels=tf.one_hot(self.labels, self.output.shape.as_list()[-1])), name='loss')
             elif loss_type == 'mean_square_error':
+                self.labels = tf.placeholder(dtype=tf.float32, shape=shape, name='labels')
                 self.loss = tf.reduce_mean(tf.square(self.output - self.labels), name='loss')
             else:
                 raise Exception('unknown loss function')
+            tf.add_to_collection('placeholders', self.labels)
             # Calculate regularization loss
-            self.regularization_parameter = tf.placeholder(dtype=tf.float32, shape=[], name='regularization_parameter')
+            self.regularization_parameter = tf.placeholder_with_default(np.array([0.], dtype=np.float32)[0], shape=[], name='regularization_parameter')
             tf.add_to_collection('placeholders', self.regularization_parameter)
             weights = tf.get_collection('weights')
             J_reg = tf.constant(0, dtype=tf.float32)
@@ -357,19 +376,6 @@ class ResNet(object):
             n_b = 0
             for b in biases:
                 n_b += np.prod(b.shape.as_list())
-#            if regularization == 'L2':
-#                for W in weights:
-#                    n_w += np.prod(W.shape.as_list())
-#                    J_reg += tf.reduce_sum(tf.square(W))
-#                self.loss += self.regularization_parameter*(J_reg/n_var)
-#            elif regularization == 'L1':
-#                for W in weights:
-#                    n_w += np.prod(W.shape.as_list())
-#                    J_reg += tf.reduce_sum(tf.abs(W))
-#                self.loss += self.regularization_parameter*(J_reg/n_var)
-#            elif regularization is None:
-#                for W in weights:
-#                    n_w += np.prod(W.shape.as_list())
         # Update architecture log
         with open(self.save_path+'_architecture.log', 'a+') as fo:
             fo.write('\nLoss function: {}, regularization: {}\n'.format(loss_type, regularization))
@@ -413,24 +419,29 @@ class ResNet(object):
                 saver.save(sess, self.save_path)
 
 
-a = ResNet(tf.float32, shape=[None,32,32,3], save_path='./checkpoints/{0}/CIFAR10_{0}'.format(8), use_bn=True) # 32x32x3
+a = ResNet(tf.float32, shape=[None,32,32,3], save_path='./checkpoints/{0}/CIFAR10_{0}'.format(10), use_bn=True) # 32x32x3
+a.add_inception_block([3,7,11], [32,48,16], 1, shield_channels=False) # 32x32x96
 a.dropout(group=1)
-a.add_inception_block([1,3,5], [32,48,16], 1, shield_channels=False) # 32x32x96
-a.dropout(group=2)
 a.start_skip_connection()
 a.add_inception_block([1,3,5], [32,48,16], 1)
-a.dropout(group=2)
+a.dropout(group=1)
 a.end_skip_connection()
 a.add_inception_block([3,5], [96,48], 2, [2,3], [24,24]) # 16x16x192
+a.dropout(group=2)
 a.start_skip_connection()
 a.add_inception_block([1,3,5], [48,96,24], 1, [3], [24]) # 16x16x192
+a.dropout(group=2)
 a.add_inception_block([1,3,5], [48,96,24], 1, [3], [24])
+a.dropout(group=2)
 a.end_skip_connection()
 a.add_inception_block([3,5], [96,48], 2, [2,3], [24,24]) # 8x8x192
+a.dropout(group=2)
 a.start_skip_connection()
 a.add_inception_block([1,3,5], [48,96,24], 1, [3], [24])
+a.dropout(group=2)
 a.end_skip_connection()
 a.add_inception_block([3,5], [96,48], 2, [2,3], [24,24]) # 4x4x192
+a.dropout(group=3)
 a.add_conv_layer(1, 64, 1) # 4x4x64
 a.dropout(group=3)
 a.add_conv_layer(4, 192, 4) # 1x1x192
@@ -457,7 +468,7 @@ with a.get_graph().as_default():
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         tic = time.time()
-        feed_dict = {**{X:np.random.randn(100,32,32,3), a.labels:np.random.randint(10, size=100), a.learning_rate:1e-3, reg_param:1e-3}, **{a.keep_prob[n]:1 for n in range(1,len(a.keep_prob)+1)}}
+        feed_dict = {**{X:np.random.randn(100,32,32,3), a.labels:np.random.randint(10, size=100), a.learning_rate:1e-9, reg_param:1e-9}, **{a.keep_prob[n]:1 for n in range(1,len(a.keep_prob)+1)}}
         y, L, _ = sess.run([Y, loss, a.training_op], feed_dict=feed_dict)
         toc = time.time()
         print(y.shape)
