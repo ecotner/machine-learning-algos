@@ -20,9 +20,10 @@ This is still a work in progress.
 - Add in generation of human-readable achitecture description
 - Add dropout capability
 - Add in batch normalization
+- Add in automatic noise injection to weights
+- Write script to run prediction on pictures using trained network
 
 ## To Do:
 
-- Add in automatic noise injection to weights
-- Write script to run prediction on pictures using trained network
+- Try and get sub-10% error on test set
 - Figure out how to do neural style transfer on the trained network

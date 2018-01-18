@@ -90,7 +90,7 @@ class ResNet(object):
             self.loss = None
             self.learning_rate = None
             self.regularization_parameter = None
-            self.keep_prob = {1:tf.placeholder_with_default(np.array([1.0], dtype=np.float32)[0], shape=[], name='keep_prob_1')}
+            self.keep_prob = {1:tf.placeholder_with_default(1.0, shape=[], name='keep_prob_1')}
             tf.add_to_collection('placeholders', self.keep_prob[1])
             self.training_op = None
             self.skip_start = None
@@ -99,7 +99,7 @@ class ResNet(object):
             self.is_training = tf.placeholder_with_default(True, shape=[], name='is_training')
             tf.add_to_collection('placeholders', self.is_training)
             self.use_bn = use_bn
-            self.weight_noise = tf.placeholder_with_default(np.array([1.0], dtype=np.float32)[0], shape=[], name='weight_noise')
+            self.weight_noise = tf.placeholder_with_default(0.0, shape=[], name='weight_noise')
             tf.add_to_collection('placeholders', self.weight_noise)
         with open(save_path+'_architecture.log', 'w+') as fo:
             fo.write('Inception ResNet:\nLayer 0 (input): shape={}\n'.format(shape))
@@ -247,7 +247,7 @@ class ResNet(object):
         with self.G.as_default():
             # Take care of keep_prob placeholder
             if group not in self.keep_prob:
-                self.keep_prob[group] = tf.placeholder_with_default(np.array([1.0], dtype=np.float32)[0], shape=[], name='keep_prob_'+str(group))
+                self.keep_prob[group] = tf.placeholder_with_default(1.0, shape=[], name='keep_prob_'+str(group))
                 tf.add_to_collection('placeholders', self.keep_prob[group])
             # Apply actual dropout operation
             self.output = tf.nn.dropout(self.output, self.keep_prob[group])
@@ -356,7 +356,7 @@ class ResNet(object):
                 raise Exception('unknown loss function')
             tf.add_to_collection('placeholders', self.labels)
             # Calculate regularization loss
-            self.regularization_parameter = tf.placeholder_with_default(np.array([0.], dtype=np.float32)[0], shape=[], name='regularization_parameter')
+            self.regularization_parameter = tf.placeholder_with_default(0.0, shape=[], name='regularization_parameter')
             tf.add_to_collection('placeholders', self.regularization_parameter)
             weights = tf.get_collection('weights')
             J_reg = tf.constant(0, dtype=tf.float32)
@@ -419,11 +419,11 @@ class ResNet(object):
                 saver.save(sess, self.save_path)
 
 
-a = ResNet(tf.float32, shape=[None,32,32,3], save_path='./checkpoints/{0}/CIFAR10_{0}'.format(10), use_bn=True) # 32x32x3
+a = ResNet(tf.float32, shape=[None,32,32,3], save_path='./checkpoints/{0}/CIFAR10_{0}'.format(11), use_bn=True) # 32x32x3
 a.add_inception_block([3,7,11], [32,48,16], 1, shield_channels=False) # 32x32x96
 a.dropout(group=1)
 a.start_skip_connection()
-a.add_inception_block([1,3,5], [32,48,16], 1)
+a.add_inception_block([3,5,7], [32,48,16], 1)
 a.dropout(group=1)
 a.end_skip_connection()
 a.add_inception_block([3,5], [96,48], 2, [2,3], [24,24]) # 16x16x192

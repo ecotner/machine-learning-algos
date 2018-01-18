@@ -16,15 +16,16 @@ import time
 RESET_PARAMETERS = True
 BATCH_SIZE = 128
 VAL_BATCH_SIZE = 256
-LEARNING_RATE = 1e-1
-LEARNING_RATE_ANNEAL_RATE = 100     # Number of epochs after which learning rate is annealed by 1/e
+LEARNING_RATE = 3e-2
+LEARNING_RATE_ANNEAL_RATE = 100     # Number of epochs after which learning rate is annealed by
+LEARNING_RATE_ANNEAL_TYPE = 'inverse'
 STEPPED_ANNEAL = True # Whether or not the learning rate is annealed by 1/e all at once, or slowly over time
 REGULARIZATION_TYPE = 'L2'  # Regularization type is already determined in ResNet.py
 REGULARIZATION_PARAMETER = 1e-2
-INPUT_NOISE_MAGNITUDE = np.sqrt(0.05)
-WEIGHT_NOISE_MAGNITUDE = 0
-KEEP_PROB = {1: .8, 2: 0.5, 3: 0.7}
-SAVE_PATH = './checkpoints/{0}/CIFAR10_{0}'.format(10)
+INPUT_NOISE_MAGNITUDE = np.sqrt(0.1)
+WEIGHT_NOISE_MAGNITUDE = np.sqrt(0.1)
+KEEP_PROB = {1: 0.5, 2: 0.65, 3: 0.8}
+SAVE_PATH = './checkpoints/{0}/CIFAR10_{0}'.format(11)
 MAX_EPOCHS = int(1e10)
 CIFAR_DATA_PATH = './CIFAR10_data/cifar-10-batches-py/'
 LOG_EVERY_N_STEPS = 100
@@ -75,12 +76,13 @@ with open(SAVE_PATH+'.log', 'w+') as fo:
     fo.write('Hyperparameters:\n')
     fo.write('Batch size: {}\n'.format(BATCH_SIZE))
     fo.write('Learning rate: {}\n'.format(LEARNING_RATE))
-    fo.write('Learning rate annealed by 1/e every N epochs: {}\n'.format(LEARNING_RATE_ANNEAL_RATE))
-    fo.write('Stepped anneal: {}'.format(STEPPED_ANNEAL))
+    fo.write('Learning rate annealed every N epochs: {}\n'.format(LEARNING_RATE_ANNEAL_RATE))
+    fo.write('Learning rate anneal type: {}\n'.format(LEARNING_RATE_ANNEAL_TYPE))
+    fo.write('Stepped anneal: {}\n'.format(STEPPED_ANNEAL))
     fo.write('Regularization type: {}\n'.format(REGULARIZATION_TYPE))
     fo.write('Regularization parameter: {}\n'.format(REGULARIZATION_PARAMETER))
-    fo.write('Input noise magnitude: {}\n'.format(INPUT_NOISE_MAGNITUDE))
-    fo.write('Weight noise magnitude: {}\n'.format(WEIGHT_NOISE_MAGNITUDE))
+    fo.write('Input noise variance: {:.2f}\n'.format(INPUT_NOISE_MAGNITUDE**2))
+    fo.write('Weight noise variance: {:.2f}\n'.format(WEIGHT_NOISE_MAGNITUDE**2))
     for n in range(1,len(KEEP_PROB)+1):
         fo.write('Dropout keep prob. group {}: {:.2f}\n'.format(n, KEEP_PROB[n]))
     fo.write('Logging frequency: {} global steps\n'.format(LOG_EVERY_N_STEPS))
@@ -159,9 +161,15 @@ with G.as_default():
         print('Beginning training...')
         for epoch in range(MAX_EPOCHS):
             if STEPPED_ANNEAL:
-                lr = LEARNING_RATE*np.exp(-(epoch//LEARNING_RATE_ANNEAL_RATE))
+                x = (epoch//LEARNING_RATE_ANNEAL_RATE)
             else:
-                lr = LEARNING_RATE*np.exp(-(epoch/LEARNING_RATE_ANNEAL_RATE))
+                x = (epoch/LEARNING_RATE_ANNEAL_RATE)
+            if LEARNING_RATE_ANNEAL_TYPE in ['exponential','exp','1/e','exp(-x)']:
+                lr = LEARNING_RATE*np.exp(-x)
+            elif LEARNING_RATE_ANNEAL_TYPE in ['inverse','1/x']:
+                lr = LEARNING_RATE/(1+x)
+            elif LEARNING_RATE_ANNEAL_TYPE in ['none','None',None]:
+                lr = LEARNING_RATE
             # Iterate over batches
             for b in range(m_train//BATCH_SIZE+1):
                 
@@ -178,7 +186,7 @@ with G.as_default():
                 if (global_steps % LOG_EVERY_N_STEPS == 0) and (global_steps != 0):
                     slice_lower = m_train
                     slice_upper = m_train + VAL_BATCH_SIZE
-                    feed_dict = {train_idx:range(slice_lower, slice_upper), regularization_parameter:REGULARIZATION_PARAMETER, input_noise_magnitude:0}
+                    feed_dict = {train_idx:range(slice_lower, slice_upper)}
                     val_loss, val_accuracy = sess.run([J, acc], feed_dict=feed_dict)
                     print('Validation loss: {:.2e}, validation accuracy: {:.3f}'.format(val_loss, val_accuracy))
                     with open(SAVE_PATH+'_train_loss.log', 'a') as fo:
