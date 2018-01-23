@@ -13,21 +13,24 @@ import matplotlib.pyplot as plt
 
 backprop_len = 10
 LSTM_width = 25
-dense_width = 20
+dense_width = 25
 batch_size = 20
-seq_len = 100*backprop_len
+seq_len = 200*backprop_len
+noise_mag = 0.1
 
 LEARNING_RATE = 1e-2
-MAX_EPOCHS = 50
+MAX_EPOCHS = 20
 
-def generateData(batch_size, seq_len, period=10):
-    ''' Generates batches of sine waves initialized with random phases, and corresponding training targets. '''
-    # Generate random phase between 0 and 2pi
+def generateData(batch_size, seq_len, period=10, noise_mag=0):
+    ''' Generates batches of sine waves initialized with random phases (and possibly noise), and corresponding training targets. '''
+    # Generate random phase between 0 and pi/2
     random_phase = 2*np.pi*np.random.rand(batch_size, 1)
     # Generate sine wave
     x = np.sin((2*np.pi/period) * np.tile(np.arange(seq_len+1), (batch_size,1)) + random_phase)
     # Shift wave by one increment
     y = np.roll(x, -1, axis=-1)
+    # Add noise (if desired)
+    x = x + noise_mag * np.random.standard_normal(x.shape)
     # Drop the last element of y in the series since it is not continuous with the first, and the first element of x to maintain the same length
     y = y[:,:-1]
     x = x[:,:-1]
@@ -104,7 +107,7 @@ with tf.Session() as sess:
     # Run loop over epochs
     global_step = 0
     for epoch in range(MAX_EPOCHS):
-        x, y = generateData(batch_size, seq_len)
+        x, y = generateData(batch_size, seq_len, noise_mag=noise_mag)
         s_, h_ = np.zeros([batch_size, LSTM_width]), np.zeros([batch_size, LSTM_width])
         
         # Loop over batches
