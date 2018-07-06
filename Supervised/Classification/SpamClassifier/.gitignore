@@ -1,2 +1,6 @@
 # Ignore all pycharm project files
 .idea*
+
+# Ignore all data files
+*.zip
+*.csv
