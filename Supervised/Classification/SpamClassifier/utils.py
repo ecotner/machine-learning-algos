@@ -1,5 +1,8 @@
 """
-Utility file to hold some
+Date: July 4, 2018
+Author: Eric Cotner
+
+Utility file to hold some convenience functions
 """
 
 import pandas as pd
@@ -60,6 +63,30 @@ def makeWordMapping(df):
                 word_mapping_dict[word] = word_idx
                 word_idx += 1
     return word_mapping_dict
+
+def makeWordMappingFromFreqDict(freq_list, drop_below=0):
+    """
+    Takes a list of (word, count) pairs, and turns it into a map (i.e. dictionary) from words to a unique
+    integer index.
+    Args:
+        freq_dict: list of (word, count) pairs
+        drop_below: drops all words from dictionary with count below this value (useful for dimensionality reduction
+            on unimportant/infrequent words)
+    Returns:
+        word_map: dictionary from words to unique integer index
+    """
+    # Define new, empty dictionary <word_map>, and an integer identifier
+    word_map = {}
+    idx = 0
+    # Iterate through words of freq_list
+    for word, count in freq_list:
+        if word not in word_map:
+            if count >= drop_below:
+                # Add word/index to word_map
+                word_map[word] = inx
+                # Increment index
+                idx += 1
+    return word_map
 
 """ UNIT TESTS """
 
