@@ -50,7 +50,7 @@ def formatAllMessages(df):
 def makeWordMapping(df):
     """ Generates a dictionary which maps words to a numerical index. Returns a dictionary. """
     word_mapping_dict = {}
-    word_idx = 0
+    word_idx = 1
 
     # Iterate over all messages in corpus
     for msg in df["Message"]:
@@ -64,10 +64,10 @@ def makeWordMapping(df):
                 word_idx += 1
     return word_mapping_dict
 
-def makeWordMappingFromFreqDict(freq_list, drop_below=0):
+def makeWordMappingFromFreqList(freq_list, drop_below=0):
     """
     Takes a list of (word, count) pairs, and turns it into a map (i.e. dictionary) from words to a unique
-    integer index.
+    integer index. Starts indexing from 1 (0 is reserved for unknown words).
     Args:
         freq_dict: list of (word, count) pairs
         drop_below: drops all words from dictionary with count below this value (useful for dimensionality reduction
@@ -77,13 +77,13 @@ def makeWordMappingFromFreqDict(freq_list, drop_below=0):
     """
     # Define new, empty dictionary <word_map>, and an integer identifier
     word_map = {}
-    idx = 0
+    idx = 1
     # Iterate through words of freq_list
     for word, count in freq_list:
         if word not in word_map:
             if count >= drop_below:
                 # Add word/index to word_map
-                word_map[word] = inx
+                word_map[word] = idx
                 # Increment index
                 idx += 1
     return word_map
