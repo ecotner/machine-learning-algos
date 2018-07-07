@@ -20,6 +20,12 @@ We can see that some of the most frequent words are really common ones such as "
 (any instance of a number), 'to', 'i' 'you', 'a', 'the', etc. Since this is a corpus
 of texts, of course the pronoun 'u' is also very prevalent.
 
+As for the class distribution, the fraction of spam messages is 747/5572=0.134, and
+the fraction of non-spam messages is 4825/5572=0.866. Because the spam messages are
+a minority class, it would probably be a good idea to do some oversampling during
+training so that our ML algorithms can't just classify everything as non-spam
+and achieve decent accuracy.
+
 ## 1) Naive Bayes classifier
 For this first attempt we'll start with a Naive Bayes classifier. Our goal is
 that given some feature vector x, we can decompose the probability of 
@@ -39,3 +45,30 @@ other features, like the number of misspelled words (or perhaps fraction of the
 words that are misspelled). For the spam classification task specifically, there
 are only two classes (spam and not spam), so our classification label will be
 y=1 for spam and y=0 for not spam.
+
+If we take the log of this probability, the product becomes a sum, so that we have
+
+![](http://quicklatex.com/cache3/28/ql_bda89f4dc9907baa15719a88ce541f28_l3.png)
+
+Now, we need to find a parametrization for these probabilities so that our algorithm
+can learn the parameters. A really simple one is to let ln(P(y)/P(x)) = b_y and
+ln(P(x_i|y)) = w_{y,i}, so that our model becomes
+
+![](http://quicklatex.com/cache3/54/ql_7657d85ae0ab9f289814e349c4ddd854_l3.png)
+
+The weights w_{y,i} and biases b_y become learned parameters of the model.
+To be concrete, our features x_i are simply going to be indicator variables as to
+whether a specific word appears in our message or not. Super simple.
+During training, our loss function will be
+
+![](http://quicklatex.com/cache3/25/ql_0918e0fae27c7f29198663da5b4fce25_l3.png)
+
+The activation function is simply the sigmoid, to squash the output to be between
+0 and 1. We can sort of think of this function f(x;b,w) as the probability that
+a specific message is spam, but this is just a heuristic. We'll eventually need
+to find a cutoff. 
+It may be worthwhile to note that we've essentially reduced this problem to 
+simple logistic regression. Can't get much more basic than that.
+
+### Training
+Now we have to train our model. I'm just going to use TensorFlow
