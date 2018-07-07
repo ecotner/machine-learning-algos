@@ -4,3 +4,7 @@
 # Ignore all data files
 *.zip
 *.csv
+
+# Ignore data and log folders
+/Data
+/logs
