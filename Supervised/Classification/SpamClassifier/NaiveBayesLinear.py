@@ -3,6 +3,7 @@ Date: July 5, 2018
 Author: Eric Cotner
 
 Script for building, training, and running inference on a Naive Bayes classifier for classifying spam.
+TODO: figure out how to get tensorflow to monitor metrics like accuracy, precision, recall, etc. and display in tensorboard
 """
 
 # Import necessary modules
@@ -148,7 +149,7 @@ class Model(object):
         # Define some useful constants?
         # Set default graph
         with self.graph.as_default():
-            # TODO: Define training optimizer and training operation
+            # Define training optimizer and training operation
             optimizer = tf.train.AdamOptimizer(learning_rate, name="Adam")
             train_op = optimizer.minimize(self.loss)
             # Begin tensorflow session
