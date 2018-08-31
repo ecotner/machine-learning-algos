@@ -1,0 +1,3 @@
+# Ignore the iris datasets
+iris.data
+iris.names
