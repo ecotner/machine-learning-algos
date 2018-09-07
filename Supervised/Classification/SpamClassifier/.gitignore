@@ -8,3 +8,6 @@
 # Ignore data and log folders
 /Data
 /logs
+
+# Ignore ipython notebook checkpoints
+.ipynb_checkpoints*
